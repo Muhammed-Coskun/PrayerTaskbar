@@ -26,3 +26,7 @@ This project uses Python and PyQt6.
 pip install -r requirements.txt
 py -m PyInstaller --onefile --windowed --noconfirm --name PrayerTaskbar src/main.py
 ```
+
+## Credits
+
+Special thanks to [Abdus.dev Diyanet API](https://prayertimes.api.abdus.dev/) for providing the reliable and fast JSON API wrapper for Diyanet prayer times.
