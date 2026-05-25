@@ -204,7 +204,7 @@ class PrayerFlyout(QWidget):
         footer.addWidget(settings_btn)
 
         # Close button
-        exit_btn = self._make_small_btn(t('close'))
+        exit_btn = self._make_icon_btn("✕")
         exit_btn.mousePressEvent = lambda e: self._quit_app()
         footer.addWidget(exit_btn)
 

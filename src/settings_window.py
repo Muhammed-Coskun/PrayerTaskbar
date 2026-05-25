@@ -416,10 +416,7 @@ class SettingsWindow(QWidget):
         link = QLabel('📥 <a href="https://namazvakitleri.diyanet.gov.tr" '
                        'style="color:#60cdff;">namazvakitleri.diyanet.gov.tr</a>')
         link.setStyleSheet("font-family: 'Segoe UI'; font-size: 9pt;")
-        link.setOpenExternalLinks(False)
-        link.linkActivated.connect(
-            lambda url: webbrowser.open("https://namazvakitleri.diyanet.gov.tr")
-        )
+        link.setOpenExternalLinks(True)
         link.setCursor(Qt.CursorShape.PointingHandCursor)
         section.addWidget(link)
 
@@ -565,10 +562,7 @@ class SettingsWindow(QWidget):
             'style="color:#60cdff;">github.com/Muhammed-Coskun/PrayerTaskbar</a>'
         )
         link.setStyleSheet("font-family: 'Segoe UI'; font-size: 9pt;")
-        link.setOpenExternalLinks(False)
-        link.linkActivated.connect(
-            lambda url: webbrowser.open("https://github.com/Muhammed-Coskun/PrayerTaskbar")
-        )
+        link.setOpenExternalLinks(True)
         link.setCursor(Qt.CursorShape.PointingHandCursor)
         section.addWidget(link)
 
