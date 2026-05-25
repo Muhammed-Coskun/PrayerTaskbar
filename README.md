@@ -24,7 +24,7 @@ This project uses Python and PyQt6.
 
 ```bash
 pip install -r requirements.txt
-py -m PyInstaller --onefile --windowed --noconfirm --name PrayerTaskbar src/main.py
+py -m PyInstaller --onefile --windowed --noconfirm --icon=app_icon.ico --name PrayerTaskbar src/main.py
 ```
 
 ## Credits
