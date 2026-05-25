@@ -556,18 +556,18 @@ class SettingsWindow(QWidget):
         section = QVBoxLayout()
         section.setSpacing(4)
 
-        version = QLabel("Prayer Widget v1.0")
+        version = QLabel("PrayerTaskbar")
         version.setStyleSheet("color: white; font-family: 'Segoe UI'; font-size: 9pt;")
         section.addWidget(version)
 
         link = QLabel(
-            '<a href="https://github.com/abdus/prayer-times-widget" '
-            'style="color:#60cdff;">github.com/abdus/prayer-times-widget</a>'
+            '<a href="https://github.com/Muhammed-Coskun/PrayerTaskbar" '
+            'style="color:#60cdff;">github.com/Muhammed-Coskun/PrayerTaskbar</a>'
         )
         link.setStyleSheet("font-family: 'Segoe UI'; font-size: 9pt;")
         link.setOpenExternalLinks(False)
         link.linkActivated.connect(
-            lambda url: webbrowser.open("https://github.com/abdus/prayer-times-widget")
+            lambda url: webbrowser.open("https://github.com/Muhammed-Coskun/PrayerTaskbar")
         )
         link.setCursor(Qt.CursorShape.PointingHandCursor)
         section.addWidget(link)
