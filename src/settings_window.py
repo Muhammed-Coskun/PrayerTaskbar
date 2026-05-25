@@ -638,6 +638,17 @@ class SettingsWindow(QWidget):
         return False
 
     # ------------------------------------------------------------------
+    # Drag and Move Handling
+    # ------------------------------------------------------------------
+
+    def mousePressEvent(self, event):
+        """Allow dragging the window natively via the OS."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self.windowHandle():
+                self.windowHandle().startSystemMove()
+            event.accept()
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
