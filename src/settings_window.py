@@ -413,11 +413,19 @@ class SettingsWindow(QWidget):
         upload_btn.clicked.connect(self._on_upload_excel)
         section.addWidget(upload_btn)
 
-        link = QLabel('📥 <a href="https://namazvakitleri.diyanet.gov.tr" '
-                       'style="color:#60cdff;">namazvakitleri.diyanet.gov.tr</a>')
-        link.setStyleSheet("font-family: 'Segoe UI'; font-size: 9pt;")
-        link.setOpenExternalLinks(True)
+        link = QPushButton("📥 namazvakitleri.diyanet.gov.tr")
+        link.setStyleSheet("""
+            QPushButton {
+                color: #60cdff; font-family: 'Segoe UI'; font-size: 9pt;
+                background: transparent; border: none; text-align: left;
+                text-decoration: underline;
+            }
+            QPushButton:hover { color: #ffffff; }
+        """)
         link.setCursor(Qt.CursorShape.PointingHandCursor)
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        link.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://namazvakitleri.diyanet.gov.tr")))
         section.addWidget(link)
 
         return section
@@ -557,13 +565,19 @@ class SettingsWindow(QWidget):
         version.setStyleSheet("color: white; font-family: 'Segoe UI'; font-size: 9pt;")
         section.addWidget(version)
 
-        link = QLabel(
-            '<a href="https://github.com/Muhammed-Coskun/PrayerTaskbar" '
-            'style="color:#60cdff;">github.com/Muhammed-Coskun/PrayerTaskbar</a>'
-        )
-        link.setStyleSheet("font-family: 'Segoe UI'; font-size: 9pt;")
-        link.setOpenExternalLinks(True)
+        link = QPushButton("github.com/Muhammed-Coskun/PrayerTaskbar")
+        link.setStyleSheet("""
+            QPushButton {
+                color: #60cdff; font-family: 'Segoe UI'; font-size: 9pt;
+                background: transparent; border: none; text-align: left;
+                text-decoration: underline;
+            }
+            QPushButton:hover { color: #ffffff; }
+        """)
         link.setCursor(Qt.CursorShape.PointingHandCursor)
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        link.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/Muhammed-Coskun/PrayerTaskbar")))
         section.addWidget(link)
 
         return section
