@@ -50,8 +50,21 @@ def create_start_menu_shortcut():
     shortcut_path = os.path.join(start_menu, "PrayerTaskbar.lnk")
     
     if not os.path.exists(shortcut_path):
-        ps_script = f"$WshShell = New-Object -comObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('{shortcut_path}'); $Shortcut.TargetPath = '{exe_path}'; $Shortcut.IconLocation = '{exe_path}'; $Shortcut.Save()"
-        subprocess.run(["powershell", "-Command", ps_script], creationflags=subprocess.CREATE_NO_WINDOW)
+        vbs_path = os.path.join(os.environ["TEMP"], "create_prayer_shortcut.vbs")
+        vbs_script = f'''
+Set oWS = WScript.CreateObject("WScript.Shell")
+Set oLink = oWS.CreateShortcut("{shortcut_path}")
+oLink.TargetPath = "{exe_path}"
+oLink.IconLocation = "{exe_path}"
+oLink.Save
+'''
+        try:
+            with open(vbs_path, "w", encoding="utf-8") as f:
+                f.write(vbs_script)
+            subprocess.run(["cscript.exe", "//Nologo", vbs_path], creationflags=subprocess.CREATE_NO_WINDOW)
+            os.remove(vbs_path)
+        except Exception as e:
+            logging.error(f"Failed to create start menu shortcut: {e}")
 
 def main():
     """Application entry point."""
