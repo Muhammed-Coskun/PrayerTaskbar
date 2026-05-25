@@ -1,27 +1,26 @@
-# Gebetszeitleiste
+# PrayerTaskbar
 
-Ein elegantes, modernes Windows-Taskleisten-Widget für Gebetszeiten, basierend auf den offiziellen Daten der Diyanet (Präsidium für Religionsangelegenheiten der Türkei). Das Widget nistet sich nahtlos in die Windows-Taskleiste ein und zeigt einen Live-Countdown zum nächsten Gebet.
+A lightweight Windows taskbar widget that displays prayer times based on official Diyanet (Presidency of Religious Affairs of Turkey) data. The widget sits in the taskbar and provides a countdown to the next prayer.
 
 ## Features
 
-- **Live-Countdown:** Zeigt direkt in der Taskleiste die Zeit bis zum nächsten Gebet an.
-- **Modernes Win11-Flyout:** Ein Klick auf das Widget öffnet ein ansprechendes, rahmenloses Flyout mit allen Gebetszeiten des Tages und den nächsten religiösen Feiertagen.
-- **Multimonitor-Support:** Wähle aus, auf welchem Bildschirm das Widget angezeigt werden soll.
-- **Lokalisierung:** Unterstützt Deutsch, Englisch und Türkisch.
-- **Diyanet API:** Holt sich automatisch die Gebetszeiten für jede beliebige Stadt per API.
-- **Autostart:** Kann automatisch mit Windows gestartet werden.
+- **Live Countdown:** Shows the remaining time until the next prayer directly in the taskbar.
+- **Flyout Menu:** Clicking the widget opens a menu with the day's prayer times and upcoming religious holy days.
+- **Multi-Monitor Support:** Choose which monitor's taskbar the widget appears on.
+- **Language Support:** Available in English, German, and Turkish.
+- **Diyanet API:** Fetches prayer times automatically for your selected city.
+- **Autostart:** Option to launch automatically when Windows starts.
 
-## Installation / Nutzung
+## How to Use
 
-1. Lade die fertige `PrayerTaskbar.exe` aus dem `dist/` Ordner herunter.
-2. Doppelklicke auf die `.exe` (es ist keine Installation von Python notwendig).
-3. Klicke in der Taskleiste auf das Widget und dann auf das **Zahnrad (⚙)**.
-4. Suche deine Stadt über die Suchleiste und wähle die gewünschte Sprache aus.
-5. FERTIG!
+1. Download the pre-built `PrayerTaskbar.exe` from the `dist/` folder or releases page.
+2. Run the `.exe` file (no Python installation required).
+3. Click the widget in the taskbar and open the settings (⚙ icon).
+4. Search for your city and select your preferred language.
 
-## Entwickler (Selbst kompilieren)
+## Build from Source
 
-Das Projekt basiert auf Python und PyQt6.
+This project uses Python and PyQt6.
 
 ```bash
 pip install -r requirements.txt
