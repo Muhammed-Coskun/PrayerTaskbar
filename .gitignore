@@ -1,0 +1,10 @@
+__pycache__/
+build/
+*.spec
+widget_debug.log
+data/
+config.json
+.vs/
+.vscode/
+.idea/
+*.pyc
