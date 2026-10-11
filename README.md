@@ -10,6 +10,8 @@
 ### Prayer times right in your Windows taskbar
 PrayerTaskbar shows the time until the next prayer next to your clock. One click opens today's prayer times and the next holy day.
 
+<sub>Namaz vakitleri · Gebetszeiten</sub>
+
 [![Windows 11](https://img.shields.io/badge/Windows-11-0078D4?labelColor=27303D)](https://www.microsoft.com/windows/windows-11)
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?labelColor=27303D&logo=python&logoColor=FFFFFF)](https://www.python.org)
 [![PyQt](https://img.shields.io/badge/PyQt-6-41CD52?labelColor=27303D&logo=qt&logoColor=FFFFFF)](https://www.riverbankcomputing.com/software/pyqt/)
