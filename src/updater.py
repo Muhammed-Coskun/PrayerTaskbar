@@ -1,11 +1,13 @@
 """
 updater.py — Finds newer releases on GitHub and installs them.
 
-Shortly after start and then once a day, the latest GitHub release is
-compared with the running version.  When it is newer, ``available`` is
-emitted: the tray shows a notification, and the flyout, tray menu and
-settings offer to update.  Updating downloads the setup and starts it;
-the setup closes the app, installs the new version and starts it again.
+Shortly after start and then once a day (unless automatic updates are
+turned off in the settings), and whenever "Check for updates" is clicked,
+the latest GitHub release is compared with the running version.  When it
+is newer, ``available`` is emitted: the tray shows a notification, and
+the flyout, tray menu and settings offer to update.  Updating downloads
+the setup and starts it; the setup closes the app, installs the new
+version and starts it again.
 """
 
 import json
@@ -15,6 +17,7 @@ import subprocess
 import tempfile
 import threading
 import urllib.request
+from datetime import datetime
 
 from PyQt6.QtCore import QObject, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
@@ -59,25 +62,48 @@ class Updater(QObject):
     """Checks for updates in the background and installs them on request."""
 
     available = pyqtSignal(dict)   # a newer release was found
+    state_changed = pyqtSignal()   # a check started or finished
     progress = pyqtSignal(int)     # download progress in percent
     failed = pyqtSignal()          # download or start of the setup failed
+    _checked = pyqtSignal(object, bool)  # (newer release or None, failed), to the UI thread
 
     def __init__(self, current_version: str = APP_VERSION, parent=None) -> None:
         super().__init__(parent)
         self.current_version = current_version
         self.update: dict | None = None
         self.installing = False
+        self.checking = False
+        self.check_failed = False
+        self.last_checked: datetime | None = None
+        self.automatic = True
+        self._checked.connect(self._on_checked)
         self._timer = QTimer(self)
-        self._timer.timeout.connect(self.check)
+        self._timer.timeout.connect(self._automatic_check)
 
-    def start(self) -> None:
+    def start(self, automatic: bool = True) -> None:
         """Check soon after start, then once a day (installed app only)."""
+        self.automatic = automatic
         if not is_frozen():
             return
-        QTimer.singleShot(_FIRST_CHECK_MS, self.check)
+        QTimer.singleShot(_FIRST_CHECK_MS, self._automatic_check)
         self._timer.start(_CHECK_INTERVAL_MS)
 
+    def set_automatic(self, enabled: bool) -> None:
+        """Turn the daily check on or off; turning it on checks right away."""
+        self.automatic = enabled
+        if enabled:
+            self.check()
+
+    def _automatic_check(self) -> None:
+        if self.automatic:
+            self.check()
+
     def check(self) -> None:
+        """Look for a newer release in the background (also used by the button)."""
+        if self.checking:
+            return
+        self.checking = True
+        self.state_changed.emit()
         threading.Thread(target=self._check, daemon=True).start()
 
     def _check(self) -> None:
@@ -85,10 +111,21 @@ class Updater(QObject):
             release = fetch_latest_release()
         except Exception as e:
             logger.info(f"Update check failed: {e}")
+            self._emit(self._checked, None, True)
             return
-        if version_tuple(release["version"]) > version_tuple(self.current_version):
+        newer = version_tuple(release["version"]) > version_tuple(self.current_version)
+        self._emit(self._checked, release if newer else None, False)
+
+    def _on_checked(self, release, failed: bool) -> None:
+        self.checking = False
+        self.check_failed = failed
+        if not failed:
+            self.last_checked = datetime.now()
+        if release is not None:
             logger.info(f"Update available: {release['version']}")
-            self._emit(self.available, release)
+            self.update = release
+            self.available.emit(release)
+        self.state_changed.emit()
 
     def _emit(self, signal, *args) -> None:
         try:
@@ -133,18 +170,12 @@ class Updater(QObject):
             self._emit(self.failed)
 
 
-def start(parent=None) -> Updater:
+def start(parent=None, automatic: bool = True) -> Updater:
     """Create the app-wide updater and start the periodic checks."""
     global _instance
     _instance = Updater(parent=parent)
-    _instance.available.connect(_remember)
-    _instance.start()
+    _instance.start(automatic)
     return _instance
-
-
-def _remember(release: dict) -> None:
-    if _instance is not None:
-        _instance.update = release
 
 
 def instance() -> "Updater | None":

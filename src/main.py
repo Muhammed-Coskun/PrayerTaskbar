@@ -122,7 +122,7 @@ def main():
     widget_module._active_widget = prayer_widget
 
     # Looks for new releases on GitHub (installed app only)
-    updater.start(parent=app)
+    updater.start(parent=app, automatic=config.get("auto_update", True))
 
     tray = PrayerTray(icon)
     tray.show()

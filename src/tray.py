@@ -85,7 +85,13 @@ class PrayerTray(QSystemTrayIcon):
         self._menu.addAction(t("quit"), QApplication.instance().quit)
 
     def _on_update_available(self, release: dict) -> None:
-        """Notify once per version, so ignoring an update doesn't nag."""
+        """Notify once per version, so ignoring an update doesn't nag.
+
+        Only for automatic checks; a manual check shows its result in the
+        settings, and with automatic updates off the user wants no popups.
+        """
+        if not updater.instance().automatic:
+            return
         version = release["version"]
         w = widget_module._active_widget
         if w is not None and w.config.get("notified_version") == version:

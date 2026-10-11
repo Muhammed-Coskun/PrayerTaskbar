@@ -44,6 +44,7 @@ GLYPH_CHEVRON_RIGHT = "\uE76C"
 GLYPH_WARNING = "\uE7BA"
 GLYPH_STAR = "\uE735"
 GLYPH_DOWNLOAD = "\uE896"
+GLYPH_SYNC = "\uE895"
 
 
 # ---------------------------------------------------------------------------

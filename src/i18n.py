@@ -103,6 +103,17 @@ TRANSLATIONS = {
         "update_notify_body": "PrayerTaskbar {version} is ready. Click to update.",
         "update_downloading": "Downloading… {percent}%",
         "update_failed": "Update failed. Please try again later.",
+        "updates": "Updates",
+        "check_updates": "Check for updates",
+        "update_checking": "Checking for updates…",
+        "update_up_to_date": "You're up to date",
+        "update_not_checked": "Not checked yet",
+        "update_check_failed": "Couldn't check for updates",
+        "check_connection": "Check your internet connection",
+        "version_label": "Version {version}",
+        "last_checked": "Last checked: {time}",
+        "auto_update_title": "Automatic updates",
+        "auto_update_desc": "Look for new versions once a day and let you know",
 
         # Hijri month names (1 = Muharram)
         "hijri_months": {
@@ -240,6 +251,17 @@ TRANSLATIONS = {
         "update_notify_body": "PrayerTaskbar {version} hazır. Güncellemek için tıklayın.",
         "update_downloading": "İndiriliyor… %{percent}",
         "update_failed": "Güncelleme başarısız oldu. Lütfen daha sonra tekrar deneyin.",
+        "updates": "Güncellemeler",
+        "check_updates": "Güncellemeleri denetle",
+        "update_checking": "Güncellemeler denetleniyor…",
+        "update_up_to_date": "Güncelsiniz",
+        "update_not_checked": "Henüz denetlenmedi",
+        "update_check_failed": "Güncellemeler denetlenemedi",
+        "check_connection": "İnternet bağlantınızı kontrol edin",
+        "version_label": "Sürüm {version}",
+        "last_checked": "Son denetim: {time}",
+        "auto_update_title": "Otomatik güncellemeler",
+        "auto_update_desc": "Günde bir kez yeni sürümleri ara ve haber ver",
 
         # Hijri month names (1 = Muharrem)
         "hijri_months": {
@@ -377,6 +399,17 @@ TRANSLATIONS = {
         "update_notify_body": "PrayerTaskbar {version} ist bereit. Zum Aktualisieren klicken.",
         "update_downloading": "Wird geladen… {percent} %",
         "update_failed": "Update fehlgeschlagen. Bitte versuche es später erneut.",
+        "updates": "Updates",
+        "check_updates": "Nach Updates suchen",
+        "update_checking": "Suche nach Updates…",
+        "update_up_to_date": "Du bist auf dem neuesten Stand",
+        "update_not_checked": "Noch nicht gesucht",
+        "update_check_failed": "Suche nach Updates fehlgeschlagen",
+        "check_connection": "Prüfe deine Internetverbindung",
+        "version_label": "Version {version}",
+        "last_checked": "Zuletzt gesucht: {time}",
+        "auto_update_title": "Automatische Updates",
+        "auto_update_desc": "Einmal am Tag nach neuen Versionen suchen und Bescheid geben",
 
         # Hijri month names (1 = Muharram)
         "hijri_months": {

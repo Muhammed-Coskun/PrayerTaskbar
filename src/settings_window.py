@@ -15,6 +15,7 @@ import logging
 import os
 import shutil
 import threading
+from datetime import date, datetime
 
 from PyQt6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QScrollArea,
@@ -28,11 +29,11 @@ from src import widget as widget_module
 from src.config import APP_VERSION, load_config, save_config, get_cache_path, get_data_dir
 from src.controls import ComboBox, SettingsCard, ToggleSwitch, accent_button, hyperlink_button
 from src.data_loader import search_locations, fetch_prayer_times, save_cache, get_coordinates
-from src.i18n import t, set_language
+from src.i18n import t, set_language, format_date
 from src.theme import (app_theme, css, font, icon_font, set_caption_color, set_dark_title_bar,
                        GLYPH_MAP_PIN, GLYPH_DOCUMENT, GLYPH_MONITOR, GLYPH_MOVE,
                        GLYPH_LANGUAGE, GLYPH_START, GLYPH_INFO, GLYPH_POWER,
-                       GLYPH_CHEVRON_LEFT, GLYPH_CHEVRON_RIGHT)
+                       GLYPH_CHEVRON_LEFT, GLYPH_CHEVRON_RIGHT, GLYPH_SYNC, GLYPH_DOWNLOAD)
 from src.win32_helpers import find_all_taskbars, get_window_rect, native_to_qt
 
 logger = logging.getLogger(__name__)
@@ -107,9 +108,12 @@ class SettingsWindow(QWidget):
         self._search_timer.setInterval(_SEARCH_DELAY_MS)
         self._search_timer.timeout.connect(self._start_search)
 
+        self._update_card: SettingsCard | None = None
         self._update_button: QPushButton | None = None
+        self._install_failed = False
+        self._download_percent = 0
         if updater.instance() is not None:
-            updater.instance().available.connect(self._on_update_available)
+            updater.instance().state_changed.connect(self._refresh_update_card)
             updater.instance().progress.connect(self._on_update_progress)
             updater.instance().failed.connect(self._on_update_failed)
 
@@ -174,10 +178,16 @@ class SettingsWindow(QWidget):
         v.addWidget(self._build_language_card(cfg))
         v.addWidget(self._build_autostart_card())
 
+        self._add_group(v, t("updates"))
+        self._update_card = self._build_update_card()
+        v.addWidget(self._update_card)
+        v.addWidget(self._build_auto_update_card(cfg))
+
         self._add_group(v, t("about"))
         v.addWidget(self._build_about_card())
         v.addWidget(self._build_quit_card())
         v.addStretch()
+        self._page_layout = v
 
         # Replaces (and deletes) the previous page
         self._scroll.setWidget(page)
@@ -503,65 +513,142 @@ class SettingsWindow(QWidget):
         # Rebuild after the combo box finished handling its signal
         QTimer.singleShot(0, self._rebuild)
 
-    def _build_autostart_card(self) -> SettingsCard:
+    def _toggle(self, checked: bool) -> tuple[QWidget, ToggleSwitch, QLabel]:
+        """A Windows 11 toggle switch with its On/Off label in front."""
         control = QWidget()
         h = QHBoxLayout(control)
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(12)
         state = self._label("", 14, self.theme.text)
         switch = ToggleSwitch(self.theme)
-        switch.setChecked(autostart.is_enabled())
-        state.setText(t("on") if switch.isChecked() else t("off"))
+        switch.setChecked(checked)
+        state.setText(t("on") if checked else t("off"))
+        switch.toggled.connect(lambda on: state.setText(t("on") if on else t("off")))
+        h.addWidget(state)
+        h.addWidget(switch)
+        return control, switch, state
+
+    def _build_autostart_card(self) -> SettingsCard:
+        control, switch, state = self._toggle(autostart.is_enabled())
 
         def on_toggled(checked: bool) -> None:
             if not autostart.set_enabled(checked):
                 switch.blockSignals(True)
                 switch.setChecked(not checked)
                 switch.blockSignals(False)
-            state.setText(t("on") if switch.isChecked() else t("off"))
+                state.setText(t("on") if switch.isChecked() else t("off"))
 
         switch.toggled.connect(on_toggled)
-        h.addWidget(state)
-        h.addWidget(switch)
         return SettingsCard(self.theme, GLYPH_START, t("autostart_title"),
                             t("autostart_desc"), control)
+
+    # ------------------------------------------------------------------
+    # Updates
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _format_check_time(moment: datetime) -> str:
+        """"23:15" for today, otherwise with the date."""
+        clock = moment.strftime("%H:%M")
+        if moment.date() == date.today():
+            return clock
+        return f"{format_date(moment.date())} {clock}"
+
+    def _build_update_card(self) -> SettingsCard:
+        """Update status with "Check for updates" or "Update", like Windows Update."""
+        up = updater.instance()
+        update = updater.available_update()
+        version = t("version_label").format(version=APP_VERSION)
+
+        if update is not None:
+            if self._install_failed:
+                description = t("update_failed")
+            else:
+                description = t("update_available").format(version=update["version"])
+            button = accent_button(t("update_now"), self.theme)
+            button.clicked.connect(start_update)
+            if up.installing:
+                button.setEnabled(False)
+                button.setText(t("update_downloading").format(percent=self._download_percent))
+            self._update_button = button
+            return SettingsCard(self.theme, GLYPH_SYNC, t("update_notify_title"),
+                                description, button)
+
+        self._update_button = None
+        checking = up is not None and up.checking
+        if checking:
+            title, description = t("update_checking"), version
+        elif up is not None and up.check_failed:
+            title = t("update_check_failed")
+            description = f"{version} · {t('check_connection')}"
+        elif up is not None and up.last_checked is not None:
+            title = t("update_up_to_date")
+            checked_at = self._format_check_time(up.last_checked)
+            description = f"{version} · {t('last_checked').format(time=checked_at)}"
+        else:
+            title, description = t("update_not_checked"), version
+
+        button = QPushButton(t("check_updates"))
+        button.setFont(font(14))
+        button.setMinimumHeight(32)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setEnabled(up is not None and not checking)
+        button.clicked.connect(self._check_for_updates)
+        return SettingsCard(self.theme, GLYPH_SYNC, title, description, button)
+
+    def _refresh_update_card(self) -> None:
+        """Swap in a new update card for the current state."""
+        if self._update_card is None:
+            return
+        new_card = self._build_update_card()
+        self._page_layout.replaceWidget(self._update_card, new_card)
+        self._update_card.deleteLater()
+        self._update_card = new_card
+
+    @staticmethod
+    def _check_for_updates() -> None:
+        if updater.instance() is not None:
+            updater.instance().check()
+
+    def _on_update_progress(self, percent: int) -> None:
+        self._install_failed = False
+        self._download_percent = percent
+        if self._update_button is not None:
+            self._update_button.setEnabled(False)
+            self._update_button.setText(t("update_downloading").format(percent=percent))
+
+    def _on_update_failed(self) -> None:
+        self._install_failed = True
+        self._refresh_update_card()
+
+    def _build_auto_update_card(self, cfg: dict) -> SettingsCard:
+        control, switch, _state = self._toggle(cfg.get("auto_update", True))
+        switch.toggled.connect(self._on_auto_update_toggled)
+        return SettingsCard(self.theme, GLYPH_DOWNLOAD, t("auto_update_title"),
+                            t("auto_update_desc"), control)
+
+    @staticmethod
+    def _on_auto_update_toggled(checked: bool) -> None:
+        # The taskbar widget owns the config in memory and writes it to disk
+        widget = _active_widget()
+        if widget is not None:
+            widget.remember("auto_update", checked)
+        else:
+            cfg = load_config()
+            cfg["auto_update"] = checked
+            save_config(cfg)
+        if updater.instance() is not None:
+            updater.instance().set_automatic(checked)
 
     # ------------------------------------------------------------------
     # About
     # ------------------------------------------------------------------
 
     def _build_about_card(self) -> SettingsCard:
-        update = updater.available_update()
-        if update is None:
-            self._update_button = None
-            link = hyperlink_button("GitHub", self.theme)
-            link.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(GITHUB_URL)))
-            return SettingsCard(self.theme, GLYPH_INFO, "PrayerTaskbar",
-                                t("about_desc").format(version=APP_VERSION), link)
-
-        # A newer version exists: offer to install it right here
-        self._update_button = accent_button(t("update_now"), self.theme)
-        self._update_button.clicked.connect(start_update)
-        if updater.instance().installing:
-            self._update_button.setEnabled(False)
-        self._about_card = SettingsCard(self.theme, GLYPH_INFO, "PrayerTaskbar",
-                                        t("update_available").format(version=update["version"]),
-                                        self._update_button)
-        return self._about_card
-
-    def _on_update_available(self, _release: dict) -> None:
-        QTimer.singleShot(0, self._rebuild)
-
-    def _on_update_progress(self, percent: int) -> None:
-        if self._update_button is not None:
-            self._update_button.setEnabled(False)
-            self._update_button.setText(t("update_downloading").format(percent=percent))
-
-    def _on_update_failed(self) -> None:
-        if self._update_button is not None:
-            self._update_button.setEnabled(True)
-            self._update_button.setText(t("update_now"))
-            self._about_card.set_description(t("update_failed"))
+        link = hyperlink_button("GitHub", self.theme)
+        link.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(GITHUB_URL)))
+        return SettingsCard(self.theme, GLYPH_INFO, "PrayerTaskbar",
+                            t("about_desc").format(version=APP_VERSION), link)
 
     def _build_quit_card(self) -> SettingsCard:
         quit_btn = QPushButton(t("quit"))

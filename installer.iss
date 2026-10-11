@@ -5,7 +5,7 @@
 ; The setup is written to dist\PrayerTaskbar-Setup.exe.
 
 #define AppName "PrayerTaskbar"
-#define AppVersion "1.1.0"
+#define AppVersion "1.1.1"
 #define AppPublisher "Muhammed Coskun"
 #define AppURL "https://github.com/Muhammed-Coskun/PrayerTaskbar"
 #define AppExe "PrayerTaskbar.exe"
