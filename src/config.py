@@ -53,15 +53,12 @@ DEFAULT_CONFIG: dict = {
     "monitor_index": 0,
     "x_offset": 185,
     "language": "en",
-    "city": "",
-    "country": "",
     "location_id": None,
     "latitude": None,
     "longitude": None,
     "location_name": "",
     "data_source": "api",       # 'api' or 'excel'
     "excel_path": None,
-    "autostart": False,
 }
 """
 Default values for every recognised configuration key.

@@ -42,12 +42,6 @@ logging.basicConfig(
     ]
 )
 
-class SuppressWin32Filter(logging.Filter):
-    def filter(self, record):
-        return "UpdateLayeredWindowIndirect failed" not in record.getMessage()
-
-logging.getLogger().addFilter(SuppressWin32Filter())
-
 def create_start_menu_shortcut():
     """Create a Windows Start Menu shortcut so the app is searchable."""
     if not is_frozen():
@@ -55,14 +49,16 @@ def create_start_menu_shortcut():
     exe_path = get_executable_path()
     start_menu = os.path.join(os.environ["APPDATA"], r"Microsoft\Windows\Start Menu\Programs")
     shortcut_path = os.path.join(start_menu, "PrayerTaskbar.lnk")
-    
-    # Loads an existing shortcut and only rewrites it if it points elsewhere
-    # (e.g. after the exe was moved or the build layout changed)
+
+    # Creates the shortcut, or repairs it when its target no longer exists
+    # (e.g. after the app was moved); a shortcut to another existing copy
+    # of the app is left alone
     vbs_path = os.path.join(os.environ["TEMP"], "create_prayer_shortcut.vbs")
     vbs_script = f'''
 Set oWS = WScript.CreateObject("WScript.Shell")
+Set oFSO = CreateObject("Scripting.FileSystemObject")
 Set oLink = oWS.CreateShortcut("{shortcut_path}")
-If LCase(oLink.TargetPath) <> LCase("{exe_path}") Then
+If Not oFSO.FileExists(oLink.TargetPath) Then
     oLink.TargetPath = "{exe_path}"
     oLink.WorkingDirectory = "{os.path.dirname(exe_path)}"
     oLink.IconLocation = "{exe_path}"
@@ -126,7 +122,8 @@ def main():
 
     tray = PrayerTray(icon)
     tray.show()
-    instance_server = InstanceServer(tray.show_prayer_times)
+    # Parented to the app so it stays alive as long as the app runs
+    InstanceServer(tray.show_prayer_times, parent=app)
 
     # Don't lose a position change that is still waiting to be saved
     def on_quit():

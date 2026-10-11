@@ -34,34 +34,20 @@ TRANSLATIONS = {
         "three_months": "Start of Three Holy Months",
 
         # UI strings
-        "days": "Days",
         "day": "Day",
-        "today": "Today!",
         "tomorrow": "Tomorrow",
-        "close": "Close",
         "settings": "Settings",
         "quit": "Quit",
-        "autostart": "Autostart",
         "language": "Language",
         "screen": "Screen",
-        "default_screen": "Default Screen",
-        "upload_excel": "Upload Prayer Data",
-        "download_data": "Download Prayer Data",
         "download_link": "Download from Diyanet",
         "about": "About",
-        "city": "City",
-        "country": "Country",
         "search": "Search",
         "location": "Location",
-        "data_loaded": "Data loaded",
         "no_data": "No data",
-        "loading": "Loading...",
         "date_missing": "Date missing!",
         "location_missing": "Set location",
         "iftar": "Iftar",
-        "save": "Save",
-        "cancel": "Cancel",
-        "version": "Version",
         "prayer_times": "Prayer Times",
 
         # Flyout
@@ -176,34 +162,20 @@ TRANSLATIONS = {
         "three_months": "Üç Ayların Başlangıcı",
 
         # UI strings
-        "days": "Gün",
         "day": "Gün",
-        "today": "Bugün!",
         "tomorrow": "Yarın",
-        "close": "Kapat",
         "settings": "Ayarlar",
         "quit": "Çıkış",
-        "autostart": "Otomatik Başlat",
         "language": "Dil",
         "screen": "Ekran",
-        "default_screen": "Varsayılan Ekran",
-        "upload_excel": "Namaz Vakti Yükle",
-        "download_data": "Namaz Vakitlerini İndir",
         "download_link": "Diyanet'ten İndir",
         "about": "Hakkında",
-        "city": "Şehir",
-        "country": "Ülke",
         "search": "Ara",
         "location": "Konum",
-        "data_loaded": "Veri yüklendi",
         "no_data": "Veri yok",
-        "loading": "Yükleniyor...",
         "date_missing": "Tarih eksik!",
         "location_missing": "Konum seçin",
         "iftar": "İftar",
-        "save": "Kaydet",
-        "cancel": "İptal",
-        "version": "Sürüm",
         "prayer_times": "Namaz Vakitleri",
 
         # Flyout
@@ -318,34 +290,20 @@ TRANSLATIONS = {
         "three_months": "Beginn der Drei Heiligen Monate",
 
         # UI strings
-        "days": "Tage",
         "day": "Tag",
-        "today": "Heute!",
         "tomorrow": "Morgen",
-        "close": "Schließen",
         "settings": "Einstellungen",
         "quit": "Beenden",
-        "autostart": "Autostart",
         "language": "Sprache",
         "screen": "Bildschirm",
-        "default_screen": "Standard-Bildschirm",
-        "upload_excel": "Gebetsdaten hochladen",
-        "download_data": "Gebetsdaten herunterladen",
         "download_link": "Von Diyanet herunterladen",
         "about": "Über",
-        "city": "Stadt",
-        "country": "Land",
         "search": "Suchen",
         "location": "Standort",
-        "data_loaded": "Daten geladen",
         "no_data": "Keine Daten",
-        "loading": "Laden...",
         "date_missing": "Datum fehlt!",
         "location_missing": "Ort festlegen",
         "iftar": "Iftar",
-        "save": "Speichern",
-        "cancel": "Abbrechen",
-        "version": "Version",
         "prayer_times": "Gebetszeiten",
 
         # Flyout
@@ -458,15 +416,6 @@ def set_language(lang: str) -> None:
             f"Supported languages: {', '.join(TRANSLATIONS.keys())}"
         )
     _current_lang = lang
-
-
-def get_language() -> str:
-    """Return the currently active language code.
-
-    Returns:
-        The active language code (e.g. 'en', 'tr', 'de').
-    """
-    return _current_lang
 
 
 def t(key: str) -> str:

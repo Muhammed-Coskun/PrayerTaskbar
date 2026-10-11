@@ -8,7 +8,7 @@ caching them locally, and loading from Excel as fallback.
 import os
 import json
 import logging
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -339,16 +339,7 @@ def load_prayer_data(config: dict, cache_path: str) -> tuple[dict, dict, str]:
                 daily_times, hijri_dates, city_name = load_excel_data(fpath)
                 if daily_times:
                     return daily_times, hijri_dates, city_name
-    
-    # Also check project root for legacy Excel
-    project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    for fname in os.listdir(project_dir):
-        if fname.endswith('.xlsx'):
-            fpath = os.path.join(project_dir, fname)
-            daily_times, hijri_dates, city_name = load_excel_data(fpath)
-            if daily_times:
-                return daily_times, hijri_dates, city_name
-    
+
     return daily_times, hijri_dates, city_name
 
 

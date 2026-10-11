@@ -42,10 +42,6 @@ class PrayerIcon(QWidget):
         self.setFixedSize(size, size)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
-    def set_color(self, color: QColor) -> None:
-        self._color = QColor(color)
-        self.update()
-
     def paintEvent(self, event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)

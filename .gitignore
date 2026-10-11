@@ -2,8 +2,7 @@ __pycache__/
 build/
 dist/
 .venv/
-GebetszeitenWidget.spec
-widget_debug.log
+widget_debug.log*
 data/
 config.json
 .vs/

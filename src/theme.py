@@ -30,21 +30,19 @@ _DEFAULT_ACCENT_PALETTE = [
 # Segoe Fluent Icons glyphs
 # ---------------------------------------------------------------------------
 
-GLYPH_SETTINGS = ""
-GLYPH_MAP_PIN = ""
-GLYPH_LANGUAGE = ""
-GLYPH_MONITOR = ""
-GLYPH_MOVE = ""
-GLYPH_START = ""
-GLYPH_POWER = ""
-GLYPH_INFO = ""
-GLYPH_DOCUMENT = ""
-GLYPH_CHEVRON_LEFT = ""
-GLYPH_CHEVRON_RIGHT = ""
-GLYPH_OPEN_IN_NEW = ""
-GLYPH_CHECK = ""
-GLYPH_WARNING = ""
-GLYPH_STAR = ""
+GLYPH_SETTINGS = "\uE713"
+GLYPH_MAP_PIN = "\uE707"
+GLYPH_LANGUAGE = "\uF2B7"
+GLYPH_MONITOR = "\uE7F4"
+GLYPH_MOVE = "\uE7C2"
+GLYPH_START = "\uE768"
+GLYPH_POWER = "\uE7E8"
+GLYPH_INFO = "\uE946"
+GLYPH_DOCUMENT = "\uE8A5"
+GLYPH_CHEVRON_LEFT = "\uE76B"
+GLYPH_CHEVRON_RIGHT = "\uE76C"
+GLYPH_WARNING = "\uE7BA"
+GLYPH_STAR = "\uE735"
 
 
 # ---------------------------------------------------------------------------
