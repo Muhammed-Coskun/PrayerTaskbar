@@ -199,3 +199,26 @@ def get_window_rect(hwnd: int) -> tuple[int, int, int, int]:
     rect = wintypes.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
     return (rect.left, rect.top, rect.right, rect.bottom)
+
+
+def native_to_qt(x: int, y: int):
+    """Map a physical screen point (Win32) to Qt's logical coordinates.
+
+    Qt keeps each screen's top-left corner in native pixels and scales
+    only its size, so the point is scaled relative to its screen.
+
+    Returns:
+        ``(QPoint, QScreen)``; the screen is None if no screen contains
+        the point (the point is then returned unchanged).
+    """
+    from PyQt6.QtCore import QPoint
+    from PyQt6.QtGui import QGuiApplication
+
+    for screen in QGuiApplication.screens():
+        geo = screen.geometry()
+        dpr = screen.devicePixelRatio()
+        if (geo.x() <= x < geo.x() + geo.width() * dpr
+                and geo.y() <= y < geo.y() + geo.height() * dpr):
+            return QPoint(round(geo.x() + (x - geo.x()) / dpr),
+                          round(geo.y() + (y - geo.y()) / dpr)), screen
+    return QPoint(x, y), None

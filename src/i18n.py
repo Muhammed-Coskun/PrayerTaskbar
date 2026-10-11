@@ -9,16 +9,6 @@ and helper functions for retrieving translated content.
 # Canonical order of prayers used throughout the application
 PRAYER_ORDER = ["fajr", "sunrise", "dhuhr", "asr", "maghrib", "isha"]
 
-# Emoji icons mapped to each prayer key
-PRAYER_ICONS = {
-    "fajr": "🌌",
-    "sunrise": "🌅",
-    "dhuhr": "☀️",
-    "asr": "🌤️",
-    "maghrib": "🌙",
-    "isha": "🌕",
-}
-
 # Complete translations dictionary keyed by language code
 TRANSLATIONS = {
     "en": {
@@ -73,6 +63,67 @@ TRANSLATIONS = {
         "cancel": "Cancel",
         "version": "Version",
         "prayer_times": "Prayer Times",
+
+        # Flyout
+        "today_unit": "today",
+        "day_unit": "day",
+        "days_unit": "days",
+        "in_duration": "in {}",
+        "dur_hm": "{h} h {m} min",
+        "dur_m": "{m} min",
+        "dur_lt1": "< 1 min",
+        "no_location_title": "No location set",
+        "no_location_body": "Choose your city to see today's prayer times.",
+        "choose_location": "Choose location",
+        "no_times_title": "No prayer times for today",
+        "no_times_body": "Check your internet connection or choose your location again in the settings.",
+        "open_settings": "Open settings",
+
+        # Settings window
+        "general": "General",
+        "taskbar": "Taskbar",
+        "location_none": "No location set",
+        "search_placeholder": "Search for a city",
+        "searching": "Searching…",
+        "no_results": "No places found",
+        "search_failed": "Search failed. Check your internet connection.",
+        "loading_times": "Loading prayer times…",
+        "times_loaded": "Prayer times loaded",
+        "times_failed": "Couldn't load prayer times. Check your internet connection.",
+        "excel_title": "Import from Excel",
+        "excel_desc": "Use a prayer time table exported from Diyanet instead of the online service",
+        "excel_active": "In use: {name}",
+        "browse": "Browse…",
+        "screen_desc": "Taskbar in which the widget is shown",
+        "screen_n": "Screen {n}",
+        "position": "Position",
+        "position_desc": "Move the widget along the taskbar. You can also drag it with the middle mouse button.",
+        "move_left": "Move left",
+        "move_right": "Move right",
+        "language_desc": "Language of the widget and the menus",
+        "autostart_title": "Start with Windows",
+        "autostart_desc": "Start PrayerTaskbar automatically when you sign in",
+        "on": "On",
+        "off": "Off",
+        "about_desc": "Version {version} · Prayer times from Diyanet",
+        "quit_title": "Quit PrayerTaskbar",
+        "quit_desc": "Removes the widget from the taskbar until you start the app again",
+
+        # Hijri month names (1 = Muharram)
+        "hijri_months": {
+            1: "Muharram",
+            2: "Safar",
+            3: "Rabi al-Awwal",
+            4: "Rabi al-Akhir",
+            5: "Jumada al-Ula",
+            6: "Jumada al-Akhira",
+            7: "Rajab",
+            8: "Shaban",
+            9: "Ramadan",
+            10: "Shawwal",
+            11: "Dhu al-Qadah",
+            12: "Dhu al-Hijjah",
+        },
 
         # Weekday names (0 = Monday, 6 = Sunday)
         "weekdays": {
@@ -155,6 +206,67 @@ TRANSLATIONS = {
         "version": "Sürüm",
         "prayer_times": "Namaz Vakitleri",
 
+        # Flyout
+        "today_unit": "bugün",
+        "day_unit": "gün",
+        "days_unit": "gün",
+        "in_duration": "{} sonra",
+        "dur_hm": "{h} sa {m} dk",
+        "dur_m": "{m} dk",
+        "dur_lt1": "< 1 dk",
+        "no_location_title": "Konum seçilmedi",
+        "no_location_body": "Bugünün namaz vakitlerini görmek için şehrinizi seçin.",
+        "choose_location": "Konum seç",
+        "no_times_title": "Bugün için namaz vakti yok",
+        "no_times_body": "İnternet bağlantınızı kontrol edin veya ayarlardan konumu yeniden seçin.",
+        "open_settings": "Ayarları aç",
+
+        # Settings window
+        "general": "Genel",
+        "taskbar": "Görev çubuğu",
+        "location_none": "Konum seçilmedi",
+        "search_placeholder": "Şehir ara",
+        "searching": "Aranıyor…",
+        "no_results": "Sonuç bulunamadı",
+        "search_failed": "Arama başarısız. İnternet bağlantınızı kontrol edin.",
+        "loading_times": "Namaz vakitleri yükleniyor…",
+        "times_loaded": "Namaz vakitleri yüklendi",
+        "times_failed": "Namaz vakitleri yüklenemedi. İnternet bağlantınızı kontrol edin.",
+        "excel_title": "Excel'den içe aktar",
+        "excel_desc": "Çevrimiçi servis yerine Diyanet'ten indirilen bir vakit tablosu kullanın",
+        "excel_active": "Kullanılıyor: {name}",
+        "browse": "Gözat…",
+        "screen_desc": "Widget'ın gösterildiği görev çubuğu",
+        "screen_n": "Ekran {n}",
+        "position": "Yerleşim",
+        "position_desc": "Widget'ı görev çubuğunda kaydırın. Orta fare tuşuyla sürükleyerek de taşıyabilirsiniz.",
+        "move_left": "Sola taşı",
+        "move_right": "Sağa taşı",
+        "language_desc": "Widget'ın ve menülerin dili",
+        "autostart_title": "Windows ile başlat",
+        "autostart_desc": "Oturum açtığınızda PrayerTaskbar'ı otomatik olarak başlat",
+        "on": "Açık",
+        "off": "Kapalı",
+        "about_desc": "Sürüm {version} · Namaz vakitleri Diyanet'ten",
+        "quit_title": "PrayerTaskbar'ı kapat",
+        "quit_desc": "Uygulamayı yeniden başlatana kadar widget görev çubuğundan kaldırılır",
+
+        # Hijri month names (1 = Muharrem)
+        "hijri_months": {
+            1: "Muharrem",
+            2: "Safer",
+            3: "Rebiülevvel",
+            4: "Rebiülahir",
+            5: "Cemaziyelevvel",
+            6: "Cemaziyelahir",
+            7: "Recep",
+            8: "Şaban",
+            9: "Ramazan",
+            10: "Şevval",
+            11: "Zilkade",
+            12: "Zilhicce",
+        },
+
         # Weekday names (0 = Monday, 6 = Sunday)
         "weekdays": {
             0: "Pazartesi",
@@ -235,6 +347,67 @@ TRANSLATIONS = {
         "cancel": "Abbrechen",
         "version": "Version",
         "prayer_times": "Gebetszeiten",
+
+        # Flyout
+        "today_unit": "heute",
+        "day_unit": "Tag",
+        "days_unit": "Tage",
+        "in_duration": "in {}",
+        "dur_hm": "{h} Std. {m} Min.",
+        "dur_m": "{m} Min.",
+        "dur_lt1": "< 1 Min.",
+        "no_location_title": "Kein Ort festgelegt",
+        "no_location_body": "Wähle deine Stadt, um die heutigen Gebetszeiten zu sehen.",
+        "choose_location": "Ort auswählen",
+        "no_times_title": "Keine Gebetszeiten für heute",
+        "no_times_body": "Prüfe deine Internetverbindung oder wähle den Ort in den Einstellungen neu.",
+        "open_settings": "Einstellungen öffnen",
+
+        # Settings window
+        "general": "Allgemein",
+        "taskbar": "Taskleiste",
+        "location_none": "Kein Ort festgelegt",
+        "search_placeholder": "Stadt suchen",
+        "searching": "Suche läuft…",
+        "no_results": "Keine Orte gefunden",
+        "search_failed": "Suche fehlgeschlagen. Prüfe deine Internetverbindung.",
+        "loading_times": "Gebetszeiten werden geladen…",
+        "times_loaded": "Gebetszeiten geladen",
+        "times_failed": "Gebetszeiten konnten nicht geladen werden. Prüfe deine Internetverbindung.",
+        "excel_title": "Aus Excel importieren",
+        "excel_desc": "Statt des Onlinedienstes eine von Diyanet exportierte Gebetszeiten-Tabelle verwenden",
+        "excel_active": "Verwendet: {name}",
+        "browse": "Durchsuchen…",
+        "screen_desc": "Taskleiste, in der das Widget angezeigt wird",
+        "screen_n": "Bildschirm {n}",
+        "position": "Position",
+        "position_desc": "Verschiebt das Widget in der Taskleiste. Du kannst es auch mit der mittleren Maustaste ziehen.",
+        "move_left": "Nach links",
+        "move_right": "Nach rechts",
+        "language_desc": "Sprache von Widget und Menüs",
+        "autostart_title": "Mit Windows starten",
+        "autostart_desc": "PrayerTaskbar beim Anmelden automatisch starten",
+        "on": "Ein",
+        "off": "Aus",
+        "about_desc": "Version {version} · Gebetszeiten von Diyanet",
+        "quit_title": "PrayerTaskbar beenden",
+        "quit_desc": "Entfernt das Widget aus der Taskleiste, bis du die App wieder startest",
+
+        # Hijri month names (1 = Muharram)
+        "hijri_months": {
+            1: "Muharram",
+            2: "Safar",
+            3: "Rabi al-Awwal",
+            4: "Rabi al-Achir",
+            5: "Dschumada al-Ula",
+            6: "Dschumada al-Achira",
+            7: "Radschab",
+            8: "Schaban",
+            9: "Ramadan",
+            10: "Schawwal",
+            11: "Dhu l-Qada",
+            12: "Dhu l-Hiddscha",
+        },
 
         # Weekday names (0 = Monday, 6 = Sunday)
         "weekdays": {
@@ -386,13 +559,40 @@ def get_holy_day_name(key: str) -> str:
     return t(key)
 
 
-def get_prayer_icon(key: str) -> str:
-    """Return the emoji icon associated with a prayer.
+def format_date(d, with_weekday: bool = False) -> str:
+    """Format a date the way it is written in the active language.
 
-    Args:
-        key: Canonical prayer key (e.g. 'fajr', 'maghrib').
-
-    Returns:
-        The emoji string for the prayer, or an empty string if not found.
+    en: "Sunday, 11 October 2026" · de: "Sonntag, 11. Oktober 2026"
+    tr: "11 Ekim 2026 Pazar"
     """
-    return PRAYER_ICONS.get(key, "")
+    month = get_month_name(d.month)
+    weekday = get_weekday_name(d.weekday()) if with_weekday else ""
+    if _current_lang == "de":
+        text = f"{d.day}. {month} {d.year}"
+        return f"{weekday}, {text}" if weekday else text
+    text = f"{d.day} {month} {d.year}"
+    if _current_lang == "tr":
+        return f"{text} {weekday}" if weekday else text
+    return f"{weekday}, {text}" if weekday else text
+
+
+def format_hijri(year: int, month: int, day: int) -> str:
+    """Format a Hijri date, e.g. "28 Rebiülahir 1448"."""
+    months = TRANSLATIONS.get(_current_lang, {}).get("hijri_months") or TRANSLATIONS["en"]["hijri_months"]
+    name = months.get(month, str(month))
+    if _current_lang == "de":
+        return f"{day}. {name} {year}"
+    return f"{day} {name} {year}"
+
+
+def format_duration(total_minutes: int) -> str:
+    """Format a remaining time, e.g. "in 1 h 5 min" / "1 sa 5 dk sonra"."""
+    if total_minutes < 1:
+        duration = t("dur_lt1")
+    else:
+        hours, minutes = divmod(total_minutes, 60)
+        if hours:
+            duration = t("dur_hm").format(h=hours, m=minutes)
+        else:
+            duration = t("dur_m").format(m=minutes)
+    return t("in_duration").format(duration)

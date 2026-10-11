@@ -17,12 +17,14 @@ logger = logging.getLogger(__name__)
 API_BASE = "https://prayertimes.api.abdus.dev/api/v1/diyanet"
 
 
-def search_locations(query: str) -> list[dict]:
+def search_locations(query: str, raise_errors: bool = False) -> list[dict]:
     """Search for locations by name via the Diyanet API.
-    
+
     Args:
         query: City or region name to search for.
-        
+        raise_errors: Re-raise network errors instead of returning [],
+            so callers can tell "no results" from "request failed".
+
     Returns:
         List of location dicts: [{'id': int, 'name': str, 'country_code': str,
         'latitude': float, 'longitude': float, 'timezone': str}, ...]
@@ -38,6 +40,8 @@ def search_locations(query: str) -> list[dict]:
             return (data.get('locations') or []) if isinstance(data, dict) else []
     except Exception as e:
         logger.error(f"Location search failed: {e}")
+        if raise_errors:
+            raise
         return []
 
 
@@ -149,8 +153,30 @@ def parse_api_data(prayer_data: list[dict]) -> dict:
         except (ValueError, AttributeError) as e:
             logger.warning(f"Skipping invalid entry: {entry} — {e}")
             continue
-    
+
     return daily_times
+
+
+def parse_api_hijri(prayer_data: list[dict]) -> dict:
+    """Build the Hijri date strings from the API's ``date_hijri`` field.
+
+    The strings are formatted in the active language (e.g. "28 Rebiülahir
+    1448"), so Ramadan detection can look for the month name.
+
+    Returns:
+        Dict mapping date -> formatted Hijri date string.
+    """
+    from src.i18n import format_hijri
+
+    hijri_dates = {}
+    for entry in prayer_data:
+        try:
+            d = date.fromisoformat(entry.get('date', '').split('T')[0])
+            year, month, day = (int(x) for x in entry['date_hijri'].split('-'))
+            hijri_dates[d] = format_hijri(year, month, day)
+        except (KeyError, ValueError, AttributeError):
+            continue
+    return hijri_dates
 
 
 def load_excel_data(excel_path: str) -> tuple[dict, dict, str]:
@@ -284,12 +310,12 @@ def load_prayer_data(config: dict, cache_path: str) -> tuple[dict, dict, str]:
         if cache and cache.get('location_id') == location_id:
             cached_times = parse_api_data(cache.get('data', []))
             today = date.today()
-            
+
             # Check if cache has today's data and at least 3 more days
             future_dates = [d for d in cached_times if d >= today]
             if len(future_dates) >= 3:
                 logger.info(f"Using cached data: {len(future_dates)} future days")
-                return cached_times, hijri_dates, city_name
+                return cached_times, parse_api_hijri(cache.get('data', [])), city_name
             else:
                 logger.info("Cache expired or insufficient, refreshing...")
         
@@ -302,7 +328,7 @@ def load_prayer_data(config: dict, cache_path: str) -> tuple[dict, dict, str]:
             save_cache(cache_path, location_id, raw_data)
             daily_times = parse_api_data(raw_data)
             if daily_times:
-                return daily_times, hijri_dates, city_name
+                return daily_times, parse_api_hijri(raw_data), city_name
     
     # Option 3: Fallback — look for any Excel in data directory
     data_dir = os.path.dirname(cache_path)
@@ -326,13 +352,13 @@ def load_prayer_data(config: dict, cache_path: str) -> tuple[dict, dict, str]:
     return daily_times, hijri_dates, city_name
 
 
-def refresh_if_needed(config: dict, cache_path: str, daily_times: dict) -> Optional[dict]:
+def refresh_if_needed(config: dict, cache_path: str, daily_times: dict) -> Optional[tuple[dict, dict]]:
     """Check if prayer data needs refreshing and fetch if so.
-    
+
     Call this periodically (e.g. every hour) to keep data fresh.
-    
+
     Returns:
-        Updated daily_times dict if refreshed, None if no refresh needed.
+        (daily_times, hijri_dates) if refreshed, None if no refresh needed.
     """
     if config.get('data_source') != 'api':
         return None
@@ -351,6 +377,6 @@ def refresh_if_needed(config: dict, cache_path: str, daily_times: dict) -> Optio
         raw_data = fetch_prayer_times(*coords)
         if raw_data:
             save_cache(cache_path, location_id, raw_data)
-            return parse_api_data(raw_data)
+            return parse_api_data(raw_data), parse_api_hijri(raw_data)
     
     return None

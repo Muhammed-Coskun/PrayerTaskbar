@@ -10,19 +10,23 @@ import os
 import ctypes
 import subprocess
 import logging
+from logging.handlers import RotatingFileHandler
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 
-from src.config import load_config, get_cache_path, is_frozen, SCRIPT_DIR, get_executable_path, get_base_dir
+from src.config import (load_config, get_cache_path, is_frozen, get_executable_path,
+                        get_base_dir, migrate_legacy_files, USER_DIR, LOG_FILE)
 from src.i18n import set_language
 from src.data_loader import load_prayer_data
-from src.holy_days import is_ramadan_today
+from src import autostart
 from src import widget as widget_module
+from src.theme import font
 from src.tray import PrayerTray
 from src.single_instance import notify_running_instance, InstanceServer
 
-# Set up logging to a file in the same directory as the executable/script
-log_file = os.path.join(SCRIPT_DIR, "widget_debug.log")
+# Set up logging to a file next to the config (%APPDATA%\PrayerTaskbar when frozen)
+os.makedirs(USER_DIR, exist_ok=True)
+log_file = LOG_FILE
 
 if getattr(sys, 'stdout', None) is None:
     sys.stdout = open(os.devnull, 'w')
@@ -30,10 +34,11 @@ if getattr(sys, 'stderr', None) is None:
     sys.stderr = open(os.devnull, 'w')
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s [%(name)s] %(levelname)s: %(message)s',
     handlers=[
-        logging.FileHandler(log_file, 'a', 'utf-8')
+        # Keep the log small: at most 1 MB plus one old file
+        RotatingFileHandler(log_file, 'a', maxBytes=1_000_000, backupCount=1, encoding='utf-8')
     ]
 )
 
@@ -85,12 +90,15 @@ def main():
     app = QApplication(sys.argv)
     # The app lives in the taskbar and tray; only "Quit" should end it
     app.setQuitOnLastWindowClosed(False)
+    # Windows 11 body text (also used by the tray menu and tooltips)
+    app.setFont(font(14))
 
     # Only one instance: a second start just opens the running one's flyout
     if notify_running_instance():
         logging.info("Another instance is already running, exiting")
         sys.exit(0)
 
+    migrate_legacy_files()
     config = load_config()
     set_language(config.get('language', 'en'))
 
@@ -110,6 +118,7 @@ def main():
     app.setWindowIcon(icon)
 
     create_start_menu_shortcut()
+    autostart.sync_path()
 
     prayer_widget = widget_module.PrayerWidget(daily_times, hijri_dates, config)
     prayer_widget.show()
@@ -118,6 +127,12 @@ def main():
     tray = PrayerTray(icon)
     tray.show()
     instance_server = InstanceServer(tray.show_prayer_times)
+
+    # Don't lose a position change that is still waiting to be saved
+    def on_quit():
+        if widget_module._active_widget is not None:
+            widget_module._active_widget.flush_pending_save()
+    app.aboutToQuit.connect(on_quit)
 
     sys.exit(app.exec())
 

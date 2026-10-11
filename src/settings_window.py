@@ -1,38 +1,40 @@
 """
-Settings dialog for the Prayer Times Taskbar Widget.
+Settings window for the Prayer Times Taskbar Widget.
 
-Provides a Win11-style dark frameless window with sections for:
-- Language selection (English / Turkish / German)
-- Location search via the Diyanet API
-- Excel prayer data upload
-- Default monitor selection
-- Windows autostart toggle (registry-based)
-- About information
+A normal app window in the style of the Windows 11 Settings app, with
+setting cards grouped into:
+- Prayer times: location search (Diyanet API) and Excel import
+- Taskbar: screen and position of the widget
+- General: language and autostart
+- About: version, project link and quitting the app
 
-The window closes when it loses focus and notifies the parent
-prayer widget to reload its data on close.
+Every change applies immediately; there is no save button.
 """
 
+import logging
 import os
-import sys
-import json
 import shutil
-import webbrowser
-import winreg
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-                              QComboBox, QLineEdit, QPushButton, QFileDialog,
-                              QFrame, QCheckBox)
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont
-from src.config import load_config, save_config, get_data_dir, get_executable_path, is_frozen
-from src.i18n import t, set_language, get_language
-from src.data_loader import search_locations, fetch_prayer_times, save_cache, parse_api_data
-from src.config import get_cache_path
+import threading
 
+from PyQt6.QtWidgets import (QApplication, QComboBox, QFileDialog, QHBoxLayout,
+                             QLabel, QLineEdit, QPushButton, QScrollArea,
+                             QVBoxLayout, QWidget)
+from PyQt6.QtCore import Qt, QObject, QTimer, QUrl, pyqtSignal
+from PyQt6.QtGui import QCursor, QDesktopServices, QGuiApplication
 
-# ---------------------------------------------------------------------------
-# Language mapping
-# ---------------------------------------------------------------------------
+from src import autostart
+from src import widget as widget_module
+from src.config import APP_VERSION, load_config, save_config, get_cache_path, get_data_dir
+from src.controls import SettingsCard, ToggleSwitch, accent_button, hyperlink_button
+from src.data_loader import search_locations, fetch_prayer_times, save_cache, get_coordinates
+from src.i18n import t, set_language
+from src.theme import (app_theme, css, font, icon_font, set_caption_color, set_dark_title_bar,
+                       GLYPH_MAP_PIN, GLYPH_DOCUMENT, GLYPH_MONITOR, GLYPH_MOVE,
+                       GLYPH_LANGUAGE, GLYPH_START, GLYPH_INFO, GLYPH_POWER,
+                       GLYPH_CHEVRON_LEFT, GLYPH_CHEVRON_RIGHT)
+from src.win32_helpers import find_all_taskbars, get_window_rect, native_to_qt
+
+logger = logging.getLogger(__name__)
 
 LANGUAGE_ITEMS = [
     ("English", "en"),
@@ -41,628 +43,542 @@ LANGUAGE_ITEMS = [
 ]
 """Display-name / code pairs for the language combo box."""
 
+GITHUB_URL = "https://github.com/Muhammed-Coskun/PrayerTaskbar"
+DIYANET_URL = "https://namazvakitleri.diyanet.gov.tr"
 
-# ---------------------------------------------------------------------------
-# Shared stylesheet fragments
-# ---------------------------------------------------------------------------
+_MAX_RESULTS = 8
+_SEARCH_DELAY_MS = 450
+_POSITION_STEP = 20
 
-_LABEL_STYLE = "color: #b0b0b0; font-size: 9pt; font-family: 'Segoe UI';"
-
-_INPUT_STYLE = """
-    background: #3d3d3d;
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
-    padding: 6px 10px;
-    font-family: 'Segoe UI';
-"""
-
-_BUTTON_STYLE = """
-    background: rgba(96, 205, 255, 0.15);
-    color: #60cdff;
-    border: 1px solid rgba(96, 205, 255, 0.25);
-    border-radius: 6px;
-    padding: 8px 16px;
-    font-family: 'Segoe UI';
-"""
-
-_COMBO_STYLE = """
-    QComboBox {
-        background: #3d3d3d;
-        color: white;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 6px;
-        padding: 6px 10px;
-        font-family: 'Segoe UI';
-    }
-    QComboBox::drop-down {
-        border: none;
-    }
-    QComboBox QAbstractItemView {
-        background: #3d3d3d;
-        color: white;
-        selection-background-color: rgba(96, 205, 255, 0.25);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        font-family: 'Segoe UI';
-    }
-"""
-
-_SEPARATOR_STYLE = (
-    "background: rgba(255, 255, 255, 0.08); min-height: 1px; max-height: 1px;"
-)
+_window: "SettingsWindow | None" = None
 
 
-# ---------------------------------------------------------------------------
-# SettingsWindow
-# ---------------------------------------------------------------------------
+def show_settings() -> None:
+    """Open the settings window, or bring it to the front if it is open."""
+    global _window
+    if _window is None:
+        _window = SettingsWindow()
+        _window.destroyed.connect(_forget_window)
+    if _window.isMinimized():
+        _window.showNormal()
+    _window.show()
+    _window.raise_()
+    _window.activateWindow()
+
+
+def _forget_window(*_args) -> None:
+    global _window
+    _window = None
+
+
+def _active_widget():
+    """The live taskbar widget (it is replaced when it switches screens)."""
+    return widget_module._active_widget
+
+
+class _Bridge(QObject):
+    """Delivers results of background requests to the UI thread."""
+    done = pyqtSignal(object, object)
+
 
 class SettingsWindow(QWidget):
-    """Win11-style dark settings dialog.
+    """Windows 11 style settings window (single instance via show_settings)."""
 
-    Args:
-        prayer_widget: The main prayer widget instance.  A reference is kept
-            so the widget can be told to reload data when the settings dialog
-            is closed or the user changes data-related options.
-    """
-
-    def __init__(self, prayer_widget=None):
+    def __init__(self):
         super().__init__()
-        self.prayer_widget = prayer_widget
-        self.config = load_config()
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.setWindowTitle("PrayerTaskbar")
+        self.setMinimumSize(480, 420)
+        self.theme = app_theme()
+
+        self._bridge = _Bridge(self)
+        self._bridge.done.connect(lambda callback, result: callback(result))
+        self._search_id = 0
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
-        self._search_timer.timeout.connect(self._do_search)
-        self._focus_timer = QTimer(self)
-        self._focus_timer.setInterval(250)
-        self._focus_timer.timeout.connect(self._check_active)
-        self._has_gained_focus = False
+        self._search_timer.setInterval(_SEARCH_DELAY_MS)
+        self._search_timer.timeout.connect(self._start_search)
 
-        self._setup_window()
-        self._build_ui()
-        self._center_on_screen()
-        self._focus_timer.start()
-
-    # ------------------------------------------------------------------
-    # Window configuration
-    # ------------------------------------------------------------------
-
-    def _setup_window(self) -> None:
-        """Configure frameless, translucent, always-on-top window flags."""
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
+        self.setObjectName("SettingsWindow")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        self.setStyleSheet(
+            f"QWidget#SettingsWindow {{ background: {css(self.theme.window_bg)}; }}"
+            "QScrollArea { background: transparent; border: none; }"
         )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setFixedWidth(420)
 
-    def _center_on_screen(self) -> None:
-        """Position the window at the centre of the primary screen."""
-        screen = self.screen()
-        if screen is None:
-            return
-        geo = screen.availableGeometry()
-        x = geo.x() + (geo.width() - self.width()) // 2
-        y = geo.y() + (geo.height() - self.height()) // 2
-        self.move(x, y)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.viewport().setAutoFillBackground(False)
+        layout.addWidget(self._scroll)
 
-    # ------------------------------------------------------------------
-    # UI construction
-    # ------------------------------------------------------------------
+        self._build_page()
+        self._place_window()
 
-    def _build_ui(self) -> None:
-        """Construct all UI sections inside a dark rounded container."""
-        # Outer layout (holds the styled container)
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(16, 16, 16, 16)
+        # Title bar in the window color, like Windows 11 apps
+        hwnd = int(self.winId())
+        set_dark_title_bar(hwnd, self.theme.dark)
+        set_caption_color(hwnd, self.theme.window_bg)
 
-        # Container frame with dark background
-        container = QFrame(self)
-        container.setObjectName("SettingsContainer")
-        container.setStyleSheet(
-            "QFrame { background: #2b2b2b; border-radius: 12px; }"
-            "QFrame#SettingsContainer { border: 1px solid rgba(255, 255, 255, 0.08); }"
-        )
-        outer.addWidget(container)
-
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(10)
-
-        # --- Header ---
-        layout.addLayout(self._build_header())
-        layout.addWidget(self._separator())
-
-        # --- Language ---
-        layout.addLayout(self._build_language_section())
-        layout.addWidget(self._separator())
-
-        # --- Location search ---
-        layout.addLayout(self._build_location_section())
-        layout.addWidget(self._separator())
-
-        # --- Excel upload ---
-        layout.addLayout(self._build_excel_section())
-        layout.addWidget(self._separator())
-
-        # --- Default screen ---
-        layout.addLayout(self._build_screen_section())
-        layout.addWidget(self._separator())
-
-        # --- Autostart ---
-        layout.addLayout(self._build_autostart_section())
-        layout.addWidget(self._separator())
-
-        # --- About ---
-        layout.addLayout(self._build_about_section())
-        layout.addWidget(self._separator())
-
-        # --- Save / Close ---
-        layout.addLayout(self._build_footer_buttons())
+    def _place_window(self) -> None:
+        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        avail = screen.availableGeometry()
+        width = min(640, avail.width() - 80)
+        height = min(780, avail.height() - 80)
+        self.resize(width, height)
+        self.move(avail.x() + (avail.width() - width) // 2,
+                  avail.y() + (avail.height() - height) // 2)
 
     # ------------------------------------------------------------------
-    # Header
+    # Page
     # ------------------------------------------------------------------
 
-    def _build_header(self) -> QHBoxLayout:
-        """Title bar with 'Settings' text and a close button."""
+    def _build_page(self) -> None:
+        """Build all cards; called again after a language change."""
+        page = QWidget()
+        page.setObjectName("Page")
+        v = QVBoxLayout(page)
+        v.setContentsMargins(28, 20, 28, 28)
+        v.setSpacing(4)
+
+        title = self._label(t("settings"), 28, self.theme.text, semibold=True, display=True)
+        v.addWidget(title)
+
+        cfg = load_config()
+
+        self._add_group(v, t("prayer_times"))
+        v.addWidget(self._build_location_card(cfg))
+        v.addWidget(self._build_excel_card(cfg))
+
+        self._add_group(v, t("taskbar"))
+        v.addWidget(self._build_screen_card(cfg))
+        v.addWidget(self._build_position_card())
+
+        self._add_group(v, t("general"))
+        v.addWidget(self._build_language_card(cfg))
+        v.addWidget(self._build_autostart_card())
+
+        self._add_group(v, t("about"))
+        v.addWidget(self._build_about_card())
+        v.addWidget(self._build_quit_card())
+        v.addStretch()
+
+        # Replaces (and deletes) the previous page
+        self._scroll.setWidget(page)
+
+    def _rebuild(self) -> None:
+        scrollbar = self._scroll.verticalScrollBar()
+        position = scrollbar.value()
+        self._search_id += 1  # drop results of searches still running
+        self._build_page()
+        QTimer.singleShot(0, lambda: scrollbar.setValue(position))
+
+    def _add_group(self, layout: QVBoxLayout, text: str) -> None:
+        layout.addSpacing(20)
+        layout.addWidget(self._label(text, 14, self.theme.text, semibold=True))
+        layout.addSpacing(4)
+
+    def _label(self, text: str, px: int, color, semibold: bool = False,
+               display: bool = False) -> QLabel:
+        label = QLabel(text)
+        label.setFont(font(px, semibold=semibold, display=display))
+        label.setStyleSheet(f"color: {css(color)};")
+        return label
+
+    # ------------------------------------------------------------------
+    # Prayer times: location
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _location_text(cfg: dict) -> str:
+        if get_coordinates(cfg) is None:
+            return t("location_none")
+        return cfg.get("location_name") or t("location_none")
+
+    def _build_location_card(self, cfg: dict) -> SettingsCard:
+        th = self.theme
+        card = SettingsCard(th, GLYPH_MAP_PIN, t("location"), self._location_text(cfg))
+        self._location_card = card
+
+        body = QWidget()
+        bv = QVBoxLayout(body)
+        # Indent to the card title: 16 margin + 22 icon + 16 spacing
+        bv.setContentsMargins(54, 12, 16, 14)
+        bv.setSpacing(8)
+
         row = QHBoxLayout()
+        row.setSpacing(8)
+        self._search_input = QLineEdit()
+        self._search_input.setPlaceholderText(t("search_placeholder"))
+        self._search_input.setClearButtonEnabled(True)
+        self._search_input.setFont(font(14))
+        self._search_input.setMinimumHeight(32)
+        self._search_input.textEdited.connect(lambda _text: self._search_timer.start())
+        self._search_input.returnPressed.connect(self._start_search)
+        row.addWidget(self._search_input, 1)
 
-        title = QLabel(t("settings"))
-        title.setFont(QFont("Segoe UI", 15))
-        title.setStyleSheet("color: white;")
-        row.addWidget(title)
+        search_btn = accent_button(t("search"), th)
+        search_btn.clicked.connect(self._start_search)
+        row.addWidget(search_btn)
+        bv.addLayout(row)
 
-        row.addStretch()
+        self._results_layout = QVBoxLayout()
+        self._results_layout.setSpacing(2)
+        bv.addLayout(self._results_layout)
 
-        close_btn = QPushButton("✕")
-        close_btn.setFixedSize(30, 30)
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet(
-            "QPushButton { color: #b0b0b0; background: transparent; border: none; "
-            "font-size: 14pt; font-family: 'Segoe UI'; }"
-            "QPushButton:hover { color: white; }"
-        )
-        close_btn.clicked.connect(self._on_close)
-        row.addWidget(close_btn)
+        self._status_label = QLabel()
+        self._status_label.setFont(font(12))
+        self._status_label.setWordWrap(True)
+        self._status_label.hide()
+        bv.addWidget(self._status_label)
 
-        return row
+        card.add_body(body)
+        return card
 
-    # ------------------------------------------------------------------
-    # Language section
-    # ------------------------------------------------------------------
+    def _set_status(self, text: str, color=None) -> None:
+        self._status_label.setText(text)
+        self._status_label.setStyleSheet(f"color: {css(color or self.theme.text_secondary)};")
+        self._status_label.setVisible(bool(text))
 
-    def _build_language_section(self) -> QVBoxLayout:
-        """Language label + combo box."""
-        section = QVBoxLayout()
-        section.setSpacing(6)
+    def _clear_results(self) -> None:
+        while self._results_layout.count():
+            item = self._results_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
 
-        lbl = QLabel(t("language"))
-        lbl.setStyleSheet(_LABEL_STYLE)
-        section.addWidget(lbl)
-
-        self.lang_combo = QComboBox()
-        self.lang_combo.setStyleSheet(_COMBO_STYLE)
-        current_lang = self.config.get("language", "en")
-        selected_idx = 0
-
-        for idx, (display, code) in enumerate(LANGUAGE_ITEMS):
-            self.lang_combo.addItem(display, code)
-            if code == current_lang:
-                selected_idx = idx
-
-        self.lang_combo.setCurrentIndex(selected_idx)
-        self.lang_combo.currentIndexChanged.connect(self._on_language_changed)
-        section.addWidget(self.lang_combo)
-
-        return section
-
-    def _on_language_changed(self, index: int) -> None:
-        """Apply the newly selected language immediately."""
-        code = self.lang_combo.itemData(index)
-        if code:
-            set_language(code)
-            self.config["language"] = code
-            save_config(self.config)
-
-    # ------------------------------------------------------------------
-    # Location section
-    # ------------------------------------------------------------------
-
-    def _build_location_section(self) -> QVBoxLayout:
-        """Location search input, button, results list, and status."""
-        section = QVBoxLayout()
-        section.setSpacing(6)
-
-        lbl = QLabel(t("location"))
-        lbl.setStyleSheet(_LABEL_STYLE)
-        section.addWidget(lbl)
-
-        # Search input + button row
-        row = QHBoxLayout()
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("e.g. Berlin, Ankara...")
-        self.search_input.setStyleSheet(_INPUT_STYLE)
-        row.addWidget(self.search_input)
-
-        self.search_btn = QPushButton(t("search"))
-        self.search_btn.setStyleSheet(_BUTTON_STYLE)
-        self.search_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.search_btn.clicked.connect(self._on_search)
-        row.addWidget(self.search_btn)
-        section.addLayout(row)
-
-        # Results container
-        self.results_layout = QVBoxLayout()
-        self.results_layout.setSpacing(2)
-        section.addLayout(self.results_layout)
-
-        # Current location status
-        loc_name = self.config.get("location_name", "") or "Not set"
-        self.location_status = QLabel(f"📍 {loc_name}")
-        self.location_status.setStyleSheet(
-            "color: #60cdff; font-size: 9pt; font-family: 'Segoe UI';"
-        )
-        section.addWidget(self.location_status)
-
-        return section
-
-    def _on_search(self) -> None:
-        """Start a location search with a small debounce delay."""
-        self.search_btn.setEnabled(False)
-        self.search_btn.setText(t("loading"))
-        self._search_timer.start(150)
-
-    def _do_search(self) -> None:
-        """Execute the API location search and display results."""
-        query = self.search_input.text().strip()
-        if not query:
-            self.search_btn.setEnabled(True)
-            self.search_btn.setText(t("search"))
+    def _start_search(self) -> None:
+        self._search_timer.stop()
+        query = self._search_input.text().strip()
+        self._search_id += 1
+        search_id = self._search_id
+        if len(query) < 2:
+            self._clear_results()
+            self._set_status("")
             return
+        self._set_status(t("searching"))
+        self._run_async(lambda: search_locations(query, raise_errors=True),
+                        lambda results: self._show_results(search_id, query, results))
 
-        results = search_locations(query)
+    @staticmethod
+    def _rank_results(query: str, results: list[dict]) -> list[dict]:
+        """Put exact and prefix matches first; the API also returns fuzzy matches."""
+        q = query.casefold()
 
-        # Clear old results
+        def rank(location: dict) -> int:
+            names = [str(location.get(k) or "").casefold() for k in ("name", "ascii_name")]
+            if q in names:
+                return 0
+            if any(name.startswith(q) for name in names):
+                return 1
+            if any(q in name for name in names):
+                return 2
+            return 3
+
+        return sorted(results, key=rank)
+
+    def _show_results(self, search_id: int, query: str, results) -> None:
+        if search_id != self._search_id:
+            return  # a newer search is running
         self._clear_results()
-
-        # Show up to 10 results as clickable labels
-        for loc in results[:10]:
-            label_text = self._format_location(loc)
-            btn = QPushButton(label_text)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(
-                "QPushButton { color: white; background: transparent; "
-                "border: none; text-align: left; padding: 4px 0; "
-                "font-family: 'Segoe UI'; font-size: 9pt; }"
-                "QPushButton:hover { color: #60cdff; }"
-            )
-            btn.clicked.connect(lambda checked, l=loc: self._on_location_select(l))
-            self.results_layout.addWidget(btn)
-
+        if results is None:
+            self._set_status(t("search_failed"), self.theme.critical)
+            return
         if not results:
-            no_res = QLabel(t("no_data"))
-            no_res.setStyleSheet("color: #b0b0b0; font-size: 9pt; font-family: 'Segoe UI';")
-            self.results_layout.addWidget(no_res)
-
-        self.search_btn.setEnabled(True)
-        self.search_btn.setText(t("search"))
-
-    def _on_location_select(self, location: dict) -> None:
-        """Save the selected location, fetch prayer times, and update UI."""
-        location_id = location.get("id")
-        location_name = self._format_location(location)
-        latitude = location.get("latitude")
-        longitude = location.get("longitude")
-
-        self.config["location_id"] = location_id
-        self.config["location_name"] = location_name
-        self.config["latitude"] = latitude
-        self.config["longitude"] = longitude
-        self.config["data_source"] = "api"
-        save_config(self.config)
-
-        self.location_status.setText(f"📍 {location_name}")
-        self._clear_results()
-
-        # Fetch prayer times for the new location
-        if location_id and latitude is not None and longitude is not None:
-            raw_data = fetch_prayer_times(latitude, longitude)
-            if raw_data:
-                cache_path = get_cache_path()
-                save_cache(cache_path, location_id, raw_data)
-                self.location_status.setText(
-                    f"📍 {location_name}  ✓ {t('data_loaded')}"
-                )
+            self._set_status(t("no_results"))
+            return
+        self._set_status("")
+        for location in self._rank_results(query, results)[:_MAX_RESULTS]:
+            item = _ResultItem(self.theme, location)
+            item.clicked.connect(lambda _checked, loc=location: self._select_location(loc))
+            self._results_layout.addWidget(item)
 
     @staticmethod
     def _format_location(location: dict) -> str:
         """Build a readable name string from a location dict."""
-        parts = []
-        for key in ("name", "country_code"):
-            val = location.get(key)
-            if val:
-                parts.append(str(val))
+        parts = [str(location[key]) for key in ("name", "country_code") if location.get(key)]
         return ", ".join(parts) if parts else str(location.get("id", ""))
 
-    def _clear_results(self) -> None:
-        """Remove all widgets from the search-results layout."""
-        while self.results_layout.count():
-            item = self.results_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
+    def _select_location(self, location: dict) -> None:
+        """Save the selected location and load its prayer times."""
+        location_id = location.get("id")
+        latitude = location.get("latitude")
+        longitude = location.get("longitude")
+        name = self._format_location(location)
+
+        cfg = load_config()
+        cfg.update({
+            "location_id": location_id,
+            "location_name": name,
+            "latitude": latitude,
+            "longitude": longitude,
+            "data_source": "api",
+        })
+        save_config(cfg)
+
+        self._search_id += 1
+        self._clear_results()
+        self._search_input.clear()
+        self._location_card.set_description(name)
+        self._excel_card.set_description(self._excel_text(cfg))
+
+        if latitude is None or longitude is None:
+            self._set_status(t("times_failed"), self.theme.critical)
+            return
+        self._set_status(t("loading_times"))
+        self._run_async(lambda: fetch_prayer_times(latitude, longitude),
+                        lambda raw: self._on_times_loaded(location_id, raw))
+
+    def _on_times_loaded(self, location_id, raw) -> None:
+        if load_config().get("location_id") != location_id:
+            return  # another location was picked in the meantime
+        if raw:
+            save_cache(get_cache_path(), location_id, raw)
+            self._set_status(t("times_loaded"), self.theme.success)
+        else:
+            self._set_status(t("times_failed"), self.theme.critical)
+        widget = _active_widget()
+        if widget is not None:
+            widget.reload_data()
 
     # ------------------------------------------------------------------
-    # Excel upload section
+    # Prayer times: Excel import
     # ------------------------------------------------------------------
 
-    def _build_excel_section(self) -> QVBoxLayout:
-        """Excel file picker and Diyanet download link."""
-        section = QVBoxLayout()
-        section.setSpacing(6)
+    @staticmethod
+    def _excel_text(cfg: dict) -> str:
+        path = cfg.get("excel_path")
+        if cfg.get("data_source") == "excel" and path:
+            return t("excel_active").format(name=os.path.basename(path))
+        return t("excel_desc")
 
-        lbl = QLabel(t("upload_excel"))
-        lbl.setStyleSheet(_LABEL_STYLE)
-        section.addWidget(lbl)
+    def _build_excel_card(self, cfg: dict) -> SettingsCard:
+        browse = QPushButton(t("browse"))
+        browse.setFont(font(14))
+        browse.setMinimumHeight(32)
+        browse.setCursor(Qt.CursorShape.PointingHandCursor)
+        browse.clicked.connect(self._on_import_excel)
 
-        upload_btn = QPushButton("📂 " + t("upload_excel"))
-        upload_btn.setStyleSheet(_BUTTON_STYLE)
-        upload_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        upload_btn.clicked.connect(self._on_upload_excel)
-        section.addWidget(upload_btn)
+        card = SettingsCard(self.theme, GLYPH_DOCUMENT, t("excel_title"),
+                            self._excel_text(cfg), browse)
+        link = hyperlink_button(t("download_link"), self.theme, inline=True)
+        link.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(DIYANET_URL)))
+        card.add_text_widget(link)
+        self._excel_card = card
+        return card
 
-        link = QPushButton("📥 namazvakitleri.diyanet.gov.tr")
-        link.setStyleSheet("""
-            QPushButton {
-                color: #60cdff; font-family: 'Segoe UI'; font-size: 9pt;
-                background: transparent; border: none; text-align: left;
-                text-decoration: underline;
-            }
-            QPushButton:hover { color: #ffffff; }
-        """)
-        link.setCursor(Qt.CursorShape.PointingHandCursor)
-        from PyQt6.QtGui import QDesktopServices
-        from PyQt6.QtCore import QUrl
-        link.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://namazvakitleri.diyanet.gov.tr")))
-        section.addWidget(link)
-
-        return section
-
-    def _on_upload_excel(self) -> None:
-        """Open a file dialog, copy the chosen XLSX into data/, and update config."""
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            t("upload_excel"),
-            "",
-            "Excel Files (*.xlsx)",
-        )
+    def _on_import_excel(self) -> None:
+        """Copy the chosen XLSX into data/ and use it as the data source."""
+        path, _ = QFileDialog.getOpenFileName(self, t("excel_title"), "", "Excel (*.xlsx)")
         if not path:
             return
-
-        data_dir = get_data_dir()
-        dest = os.path.join(data_dir, os.path.basename(path))
+        dest = os.path.join(get_data_dir(), os.path.basename(path))
         try:
             shutil.copy2(path, dest)
         except shutil.SameFileError:
             pass
 
-        self.config["data_source"] = "excel"
-        self.config["excel_path"] = dest
-        save_config(self.config)
+        cfg = load_config()
+        cfg["data_source"] = "excel"
+        cfg["excel_path"] = dest
+        save_config(cfg)
+        self._excel_card.set_description(self._excel_text(cfg))
+        widget = _active_widget()
+        if widget is not None:
+            widget.reload_data()
 
     # ------------------------------------------------------------------
-    # Default screen section
+    # Taskbar: screen and position
     # ------------------------------------------------------------------
 
-    def _build_screen_section(self) -> QVBoxLayout:
-        """Monitor selection combo box."""
-        from src.win32_helpers import find_all_taskbars
+    @staticmethod
+    def _screen_label(index: int, taskbar_hwnd: int) -> str:
+        label = t("screen_n").format(n=index + 1)
+        left, top, right, bottom = get_window_rect(taskbar_hwnd)
+        _point, screen = native_to_qt((left + right) // 2, (top + bottom) // 2)
+        if screen is not None and screen.name():
+            label = f"{label} · {screen.name()}"
+        return label
 
-        section = QVBoxLayout()
-        section.setSpacing(6)
-
-        lbl = QLabel(t("default_screen"))
-        lbl.setStyleSheet(_LABEL_STYLE)
-        section.addWidget(lbl)
-
-        self.screen_combo = QComboBox()
-        self.screen_combo.setStyleSheet(_COMBO_STYLE)
-
+    def _build_screen_card(self, cfg: dict) -> SettingsCard:
+        combo = QComboBox()
+        combo.setFont(font(14))
+        combo.setMinimumHeight(32)
+        combo.setMinimumWidth(200)
         taskbars = find_all_taskbars()
-        selected_idx = 0
-        monitor_idx = self.config.get("monitor_index", 0)
-
-        for idx, (name, _hwnd) in enumerate(taskbars):
-            self.screen_combo.addItem(name, idx)
-            if idx == monitor_idx:
-                selected_idx = idx
-
+        for index, (_name, hwnd) in enumerate(taskbars):
+            combo.addItem(self._screen_label(index, hwnd), index)
         if not taskbars:
-            self.screen_combo.addItem("Screen 1", 0)
+            combo.addItem(t("screen_n").format(n=1), 0)
 
-        self.screen_combo.setCurrentIndex(selected_idx)
-        self.screen_combo.currentIndexChanged.connect(self._on_screen_changed)
-        section.addWidget(self.screen_combo)
+        widget = _active_widget()
+        current = widget.current_monitor_index if widget is not None else cfg.get("monitor_index", 0)
+        combo.setCurrentIndex(max(0, min(current, combo.count() - 1)))
+        combo.setEnabled(len(taskbars) > 1)
+        combo.currentIndexChanged.connect(lambda i: self._on_screen_changed(combo.itemData(i)))
+        return SettingsCard(self.theme, GLYPH_MONITOR, t("screen"), t("screen_desc"), combo)
 
-        return section
+    @staticmethod
+    def _on_screen_changed(index) -> None:
+        if index is None:
+            return
+        widget = _active_widget()
+        if widget is not None:
+            widget.switch_monitor(index)
+        else:
+            cfg = load_config()
+            cfg["monitor_index"] = index
+            save_config(cfg)
 
-    def _on_screen_changed(self, index: int) -> None:
-        """Persist the newly selected monitor index."""
-        data = self.screen_combo.itemData(index)
-        if data is not None:
-            self.config["monitor_index"] = data
-            save_config(self.config)
+    def _build_position_card(self) -> SettingsCard:
+        buttons = QWidget()
+        h = QHBoxLayout(buttons)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(8)
+        for glyph, tooltip, delta in (
+            (GLYPH_CHEVRON_LEFT, t("move_left"), _POSITION_STEP),
+            (GLYPH_CHEVRON_RIGHT, t("move_right"), -_POSITION_STEP),
+        ):
+            btn = QPushButton(glyph)
+            btn.setFont(icon_font(12))
+            btn.setFixedSize(40, 32)
+            btn.setToolTip(tooltip)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            # Keep moving while the button is held down
+            btn.setAutoRepeat(True)
+            btn.setAutoRepeatDelay(400)
+            btn.setAutoRepeatInterval(80)
+            btn.clicked.connect(lambda _checked, d=delta: self._move_widget(d))
+            h.addWidget(btn)
+        return SettingsCard(self.theme, GLYPH_MOVE, t("position"), t("position_desc"), buttons)
+
+    @staticmethod
+    def _move_widget(delta: int) -> None:
+        widget = _active_widget()
+        if widget is not None:
+            widget.adjust_position(delta)
 
     # ------------------------------------------------------------------
-    # Autostart section
+    # General: language and autostart
     # ------------------------------------------------------------------
 
-    def _build_autostart_section(self) -> QVBoxLayout:
-        """Autostart checkbox backed by the Windows Run registry key."""
-        section = QVBoxLayout()
-        section.setSpacing(6)
+    def _build_language_card(self, cfg: dict) -> SettingsCard:
+        combo = QComboBox()
+        combo.setFont(font(14))
+        combo.setMinimumHeight(32)
+        combo.setMinimumWidth(160)
+        current = cfg.get("language", "en")
+        for display, code in LANGUAGE_ITEMS:
+            combo.addItem(display, code)
+            if code == current:
+                combo.setCurrentIndex(combo.count() - 1)
+        combo.currentIndexChanged.connect(lambda i: self._on_language_changed(combo.itemData(i)))
+        return SettingsCard(self.theme, GLYPH_LANGUAGE, t("language"), t("language_desc"), combo)
 
-        self.autostart_cb = QCheckBox(t("autostart"))
-        self.autostart_cb.setStyleSheet(
-            "QCheckBox { color: white; font-family: 'Segoe UI'; font-size: 9pt; }"
-            "QCheckBox::indicator { width: 16px; height: 16px; }"
+    def _on_language_changed(self, code) -> None:
+        if not code:
+            return
+        cfg = load_config()
+        cfg["language"] = code
+        save_config(cfg)
+        set_language(code)
+        widget = _active_widget()
+        if widget is not None:
+            widget.reload_data()
+        # Rebuild after the combo box finished handling its signal
+        QTimer.singleShot(0, self._rebuild)
+
+    def _build_autostart_card(self) -> SettingsCard:
+        control = QWidget()
+        h = QHBoxLayout(control)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(12)
+        state = self._label("", 14, self.theme.text)
+        switch = ToggleSwitch(self.theme)
+        switch.setChecked(autostart.is_enabled())
+        state.setText(t("on") if switch.isChecked() else t("off"))
+
+        def on_toggled(checked: bool) -> None:
+            if not autostart.set_enabled(checked):
+                switch.blockSignals(True)
+                switch.setChecked(not checked)
+                switch.blockSignals(False)
+            state.setText(t("on") if switch.isChecked() else t("off"))
+
+        switch.toggled.connect(on_toggled)
+        h.addWidget(state)
+        h.addWidget(switch)
+        return SettingsCard(self.theme, GLYPH_START, t("autostart_title"),
+                            t("autostart_desc"), control)
+
+    # ------------------------------------------------------------------
+    # About
+    # ------------------------------------------------------------------
+
+    def _build_about_card(self) -> SettingsCard:
+        link = hyperlink_button("GitHub", self.theme)
+        link.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(GITHUB_URL)))
+        return SettingsCard(self.theme, GLYPH_INFO, "PrayerTaskbar",
+                            t("about_desc").format(version=APP_VERSION), link)
+
+    def _build_quit_card(self) -> SettingsCard:
+        quit_btn = QPushButton(t("quit"))
+        quit_btn.setFont(font(14))
+        quit_btn.setMinimumHeight(32)
+        quit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        quit_btn.clicked.connect(QApplication.instance().quit)
+        return SettingsCard(self.theme, GLYPH_POWER, t("quit_title"), t("quit_desc"), quit_btn)
+
+    # ------------------------------------------------------------------
+    # Background work
+    # ------------------------------------------------------------------
+
+    def _run_async(self, work, callback) -> None:
+        """Run *work* in a thread and pass its result (None on error) to *callback*."""
+        bridge = self._bridge
+
+        def run():
+            try:
+                result = work()
+            except Exception:
+                logger.exception("Background request failed")
+                result = None
+            try:
+                bridge.done.emit(callback, result)
+            except RuntimeError:
+                pass  # the window was closed in the meantime
+
+        threading.Thread(target=run, daemon=True).start()
+
+
+class _ResultItem(QPushButton):
+    """One search result: place name and country / time zone."""
+
+    def __init__(self, theme, location: dict) -> None:
+        super().__init__()
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMinimumHeight(36)
+        self.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; border-radius: 4px; }}"
+            f"QPushButton:hover {{ background: {css(theme.subtle_hover)}; }}"
+            f"QPushButton:pressed {{ background: {css(theme.subtle_pressed)}; }}"
         )
-        self.autostart_cb.setChecked(self._is_autostart_enabled())
-        self.autostart_cb.toggled.connect(self._toggle_autostart)
-        section.addWidget(self.autostart_cb)
+        h = QHBoxLayout(self)
+        h.setContentsMargins(10, 0, 10, 0)
+        h.setSpacing(12)
 
-        return section
+        name = QLabel(location.get("name") or str(location.get("id", "")))
+        name.setFont(font(14))
+        name.setStyleSheet(f"color: {css(theme.text)};")
+        h.addWidget(name)
+        h.addStretch()
 
-    @staticmethod
-    def _is_autostart_enabled() -> bool:
-        """Check if the autostart registry value exists."""
-        try:
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Run",
-                0,
-                winreg.KEY_READ,
-            )
-            winreg.QueryValueEx(key, "PrayerTaskbar")
-            winreg.CloseKey(key)
-            return True
-        except Exception:
-            return False
+        details = " · ".join(str(location[k]) for k in ("country_code", "timezone") if location.get(k))
+        detail = QLabel(details)
+        detail.setFont(font(12))
+        detail.setStyleSheet(f"color: {css(theme.text_secondary)};")
+        h.addWidget(detail)
 
-    @staticmethod
-    def _toggle_autostart(checked: bool) -> None:
-        """Write or remove the PrayerWidget autostart registry entry."""
-        try:
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Run",
-                0,
-                winreg.KEY_SET_VALUE | winreg.KEY_READ,
-            )
-            if checked:
-                exe_path = get_executable_path()
-                winreg.SetValueEx(
-                    key, "PrayerTaskbar", 0, winreg.REG_SZ, f'"{exe_path}"'
-                )
-            else:
-                winreg.DeleteValue(key, "PrayerTaskbar")
-            winreg.CloseKey(key)
-        except Exception:
-            pass
-
-    # ------------------------------------------------------------------
-    # About section
-    # ------------------------------------------------------------------
-
-    def _build_about_section(self) -> QVBoxLayout:
-        """Version label and project link."""
-        section = QVBoxLayout()
-        section.setSpacing(4)
-
-        version = QLabel("PrayerTaskbar")
-        version.setStyleSheet("color: white; font-family: 'Segoe UI'; font-size: 9pt;")
-        section.addWidget(version)
-
-        link = QPushButton("github.com/Muhammed-Coskun/PrayerTaskbar")
-        link.setStyleSheet("""
-            QPushButton {
-                color: #60cdff; font-family: 'Segoe UI'; font-size: 9pt;
-                background: transparent; border: none; text-align: left;
-                text-decoration: underline;
-            }
-            QPushButton:hover { color: #ffffff; }
-        """)
-        link.setCursor(Qt.CursorShape.PointingHandCursor)
-        from PyQt6.QtGui import QDesktopServices
-        from PyQt6.QtCore import QUrl
-        link.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/Muhammed-Coskun/PrayerTaskbar")))
-        section.addWidget(link)
-
-        return section
-
-    # ------------------------------------------------------------------
-    # Footer buttons
-    # ------------------------------------------------------------------
-
-    def _build_footer_buttons(self) -> QHBoxLayout:
-        """Save and Close buttons at the bottom of the dialog."""
-        row = QHBoxLayout()
-        row.addStretch()
-
-        save_btn = QPushButton(t("save"))
-        save_btn.setStyleSheet(_BUTTON_STYLE)
-        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        save_btn.clicked.connect(self._on_save)
-        row.addWidget(save_btn)
-
-        close_btn = QPushButton(t("close"))
-        close_btn.setStyleSheet(
-            "background: rgba(255,255,255,0.06); color: #b0b0b0; "
-            "border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; "
-            "padding: 8px 16px; font-family: 'Segoe UI';"
-        )
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.clicked.connect(self._on_close)
-        row.addWidget(close_btn)
-
-        return row
-
-    def _on_save(self) -> None:
-        """Persist the current config and close the dialog."""
-        save_config(self.config)
-        self._on_close()
-
-    # ------------------------------------------------------------------
-    # Close / focus handling
-    # ------------------------------------------------------------------
-
-    def _on_close(self) -> None:
-        """Close the settings window and tell the prayer widget to reload."""
-        self._focus_timer.stop()
-        self.close()
-        if self.prayer_widget is not None and hasattr(self.prayer_widget, "reload_data"):
-            self.prayer_widget.reload_data()
-
-    def _check_active(self) -> None:
-        """Close the window if it loses focus."""
-        if self.isActiveWindow():
-            self._has_gained_focus = True
-        elif getattr(self, '_has_gained_focus', False) and not self._has_active_child():
-            self._focus_timer.stop()
-            self._on_close()
-
-    def _has_active_child(self) -> bool:
-        """Return True if any child popup (e.g. combo dropdown) is active."""
-        active = self.focusWidget()
-        if active is not None:
-            return True
-        # Check combo-box popups which steal focus temporarily
-        for combo in self.findChildren(QComboBox):
-            view = combo.view()
-            if view is not None and view.isVisible():
-                return True
-        return False
-
-    # ------------------------------------------------------------------
-    # Drag and Move Handling
-    # ------------------------------------------------------------------
-
-    def mousePressEvent(self, event):
-        """Allow dragging the window natively via the OS."""
-        if event.button() == Qt.MouseButton.LeftButton:
-            if self.windowHandle():
-                self.windowHandle().startSystemMove()
-            event.accept()
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _separator() -> QFrame:
-        """Create a subtle horizontal line separator."""
-        line = QFrame()
-        line.setStyleSheet(_SEPARATOR_STYLE)
-        line.setFixedHeight(1)
-        return line
+        for label in (name, detail):
+            label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)

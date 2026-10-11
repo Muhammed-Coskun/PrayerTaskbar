@@ -1,8 +1,8 @@
 """
-holy_days.py — Islamic holy days data and visual styles.
+holy_days.py — Islamic holy days data.
 
-Contains holy day dates for 2026-2035 (from Diyanet) and gradient
-styles for the holy day cards in the flyout menu.
+Contains holy day dates for 2026-2035 (from Diyanet) for the holy day
+card in the flyout menu.
 """
 
 from datetime import date
@@ -135,22 +135,6 @@ HOLY_DAYS = [
 ]
 
 
-# Gradient styles for each holy day type
-HOLY_DAY_STYLES = {
-    'mirac':          {'grad_start': '#1a0a2e', 'grad_mid': '#2d1b4e', 'grad_end': '#5c2d91', 'accent': '#b388ff'},
-    'berat':          {'grad_start': '#0d1525', 'grad_mid': '#1a2744', 'grad_end': '#2e3f6e', 'accent': '#90caf9'},
-    'qadr':           {'grad_start': '#1a1400', 'grad_mid': '#2e2200', 'grad_end': '#5c4a00', 'accent': '#ffd700'},
-    'ramadan_start':  {'grad_start': '#1a1500', 'grad_mid': '#2e2800', 'grad_end': '#4d4000', 'accent': '#ffb300'},
-    'eid_fitr':       {'grad_start': '#0a1a0a', 'grad_mid': '#142e14', 'grad_end': '#1e5c1e', 'accent': '#66bb6a'},
-    'eid_adha':       {'grad_start': '#0a1a18', 'grad_mid': '#142e2a', 'grad_end': '#1a5c52', 'accent': '#26a69a'},
-    'hijri_ny':       {'grad_start': '#0a1525', 'grad_mid': '#142844', 'grad_end': '#1e4a7a', 'accent': '#42a5f5'},
-    'ashura':         {'grad_start': '#1a120a', 'grad_mid': '#2e1f12', 'grad_end': '#5c3a1a', 'accent': '#e6a44a'},
-    'mawlid':         {'grad_start': '#1a0a12', 'grad_mid': '#2e1420', 'grad_end': '#5c2840', 'accent': '#f48fb1'},
-    'raghaib':        {'grad_start': '#0a1a1e', 'grad_mid': '#142e35', 'grad_end': '#1a5c68', 'accent': '#4dd0e1'},
-    'three_months':   {'grad_start': '#140a25', 'grad_mid': '#251444', 'grad_end': '#3d1e7a', 'accent': '#b39ddb'},
-}
-
-
 def get_next_holy_day() -> tuple[Optional[date], Optional[str], Optional[int]]:
     """Find the next upcoming holy day from today.
     
@@ -167,18 +151,6 @@ def get_next_holy_day() -> tuple[Optional[date], Optional[str], Optional[int]]:
         if d >= today:
             return d, key, day_num
     return None, None, None
-
-
-def get_holy_day_style(key: str) -> dict:
-    """Get the gradient style for a holy day type.
-    
-    Args:
-        key: Translation key (e.g. 'qadr', 'eid_fitr').
-        
-    Returns:
-        Style dict with grad_start, grad_mid, grad_end, accent keys.
-    """
-    return HOLY_DAY_STYLES.get(key, HOLY_DAY_STYLES['qadr'])
 
 
 def is_ramadan_today(hijri_dates: dict) -> bool:

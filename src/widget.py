@@ -6,6 +6,10 @@ taskbar as a child window.  It displays a live countdown to the next
 prayer time, automatically refreshes API data, handles multi-monitor
 setups, and opens the flyout menu on click.
 
+The widget paints itself (no child labels or style sheets), redraws only
+when something visible changes, and updates exactly when the minute
+changes, so it reacts like a native taskbar button.
+
 Usage (from ``main.py``)::
 
     from src.widget import PrayerWidget, _active_widget
@@ -15,11 +19,15 @@ Usage (from ``main.py``)::
 """
 
 import logging
-from datetime import datetime, timedelta, date
+import math
+import threading
+import time
+from datetime import datetime, timedelta
 
-from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout
-from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QRect
-from PyQt6.QtGui import QFont, QFontMetrics
+from PyQt6.QtWidgets import QWidget
+from PyQt6.QtCore import (Qt, QObject, QTimer, QPropertyAnimation, QEasingCurve,
+                          QPointF, QRect, QRectF, pyqtSignal)
+from PyQt6.QtGui import QFontMetricsF, QGuiApplication, QPainter
 
 from src.config import load_config, save_config, get_cache_path
 from src.i18n import get_prayer_name, t, set_language, PRAYER_ORDER
@@ -29,10 +37,12 @@ from src.win32_helpers import (
     is_window_valid,
     get_taskbar_rect,
     get_window_rect,
+    native_to_qt,
     user32,
 )
 from src.data_loader import load_prayer_data, refresh_if_needed, get_coordinates
 from src.holy_days import is_ramadan_today
+from src.theme import system_theme, system_uses_dark, font
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +58,19 @@ disconnect/reconnect).  ``main.py`` can import this to keep a reference
 to the live widget.
 """
 
+_DEFAULT_OFFSET = 185        # distance from the right end of the taskbar
+_PADDING_H = 12              # space left and right of the text
+_GAP = 8                     # between prayer name and countdown
+_TICK_SLACK_MS = 30          # update just after the minute has changed
+_HOUSEKEEPING_MS = 2_000     # taskbar, screen and theme checks
+_SAVE_DELAY_MS = 600         # write the config once moving has stopped
+_REOPEN_GUARD_S = 0.3        # a click that closed the flyout must not reopen it
+
+
+class _Bridge(QObject):
+    """Delivers results of background data refreshes to the UI thread."""
+    refreshed = pyqtSignal(object)
+
 
 # ---------------------------------------------------------------------------
 # PrayerWidget
@@ -57,9 +80,9 @@ class PrayerWidget(QWidget):
     """Taskbar-embedded widget showing a countdown to the next prayer.
 
     The widget is injected into the Windows taskbar via ``SetParent`` and
-    WS_CHILD style manipulation.  It periodically updates the displayed
-    prayer name and remaining time, rescans for taskbar changes, and
-    refreshes prayer data from the Diyanet API.
+    WS_CHILD style manipulation.  It updates the displayed prayer name and
+    remaining time at every minute change, watches for taskbar, screen and
+    theme changes, and refreshes prayer data from the Diyanet API.
 
     Args:
         daily_times: Dict mapping ``date`` → prayer times dict
@@ -88,11 +111,24 @@ class PrayerWidget(QWidget):
         self.city_name = config.get('location_name', '') or t('prayer_times')
         self.is_ramadan = is_ramadan_today(hijri_dates)
 
+        # ---- Display state ----
+        self._name = ""          # prayer name, or a status text
+        self._countdown = ""     # "HH:MM", empty for status texts
+        self._warn = False       # less than 15 minutes left
+        self._minute = None      # minute the display was computed for
+        self._hovered = False
+        self._pressed = False
+        self._theme = system_theme()
+        self._font = font(13, semibold=True)
+
         # ---- Internal state ----
         self._flyout = None
-        self._dragging = False
-        self._drag_start_x: float = 0.0
+        self._flyout_closed_at = 0.0
+        self._drag_origin: tuple[float, int] | None = None
         self._recreate_attempts = 0
+        self._refreshing = False
+        self._bridge = _Bridge(self)
+        self._bridge.refreshed.connect(self._on_refreshed)
 
         # ---- Window flags ----
         self.setWindowFlags(
@@ -100,46 +136,6 @@ class PrayerWidget(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-
-        # ---- Stylesheet: transparent bg, hover effect, white text ----
-        self.setStyleSheet(
-            """
-            QWidget#MainContainer {
-                background-color: transparent;
-                border: 1px solid transparent;
-                border-radius: 6px;
-            }
-            QWidget#MainContainer:hover {
-                background-color: rgba(255, 255, 255, 18);
-                border: 1px solid rgba(255, 255, 255, 12);
-            }
-            QLabel {
-                color: white;
-                background-color: transparent;
-                border: none;
-                padding: 0px;
-            }
-            """
-        )
-
-        # ---- UI structure ----
-        self.container = QWidget(self)
-        self.container.setObjectName("MainContainer")
-        self.container.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.addWidget(self.container)
-
-        inner_layout = QVBoxLayout(self.container)
-        inner_layout.setContentsMargins(10, 0, 10, 0)
-
-        self.label = QLabel("Loading...")
-        self.label.setFont(QFont("Segoe UI Semibold", 10))
-        self.label.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        inner_layout.addWidget(
-            self.label, alignment=Qt.AlignmentFlag.AlignCenter
-        )
 
         # ---- Taskbar discovery & injection ----
         self.taskbars: list[tuple[str, int]] = find_all_taskbars()
@@ -159,43 +155,49 @@ class PrayerWidget(QWidget):
             if hwnd:
                 self._do_inject(int(hwnd))
 
-        # ---- Initial render ----
-        self.update_widget()
+        # ---- Timers ----
+        # Countdown: fires right after each minute change
+        self._tick_timer = QTimer(self)
+        self._tick_timer.setSingleShot(True)
+        self._tick_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._tick_timer.timeout.connect(self._tick)
 
-        # ---- Update timer: refresh display every 10 seconds ----
-        self._update_timer = QTimer(self)
-        self._update_timer.timeout.connect(self.update_widget)
-        self._update_timer.start(10_000)
+        # Taskbar alive, monitors, theme, taskbar size, missed minutes
+        self._housekeeping_timer = QTimer(self)
+        self._housekeeping_timer.timeout.connect(self._housekeeping)
+        self._housekeeping_timer.start(_HOUSEKEEPING_MS)
 
-        # ---- Rescan timer: detect taskbar changes every 5 seconds ----
-        self._rescan_timer = QTimer(self)
-        self._rescan_timer.timeout.connect(self._rescan_taskbars)
-        self._rescan_timer.start(5_000)
-
-        # ---- Data refresh timer: check API data every 30 minutes ----
+        # API data: check every 30 minutes whether it runs low
         self._data_refresh_timer = QTimer(self)
         self._data_refresh_timer.timeout.connect(self._refresh_data)
         self._data_refresh_timer.start(30 * 60 * 1000)
+
+        # Position changes are written to disk once moving has stopped
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(_SAVE_DELAY_MS)
+        self._save_timer.timeout.connect(self._save_config)
+
+        # ---- Initial render ----
+        self._tick()
+
+        # Build a flyout once in the background: the first one loads fonts
+        # and styles (~200 ms), afterwards it opens instantly
+        QTimer.singleShot(1500, self._prewarm_flyout)
 
     # ------------------------------------------------------------------
     # Taskbar management
     # ------------------------------------------------------------------
 
-    def _rescan_taskbars(self) -> None:
-        """Detect lost or newly connected taskbars and react accordingly.
-
-        If the current taskbar window has been destroyed (e.g. monitor
-        disconnected), the widget is recreated.  If a new monitor
-        appears and matches the saved preference, the widget switches
-        to it.
-        """
-        # Check if current taskbar is still alive
+    def _housekeeping(self) -> None:
+        """React to lost/new taskbars, theme changes and missed minutes."""
+        # The taskbar was destroyed (Explorer restart, monitor unplugged)
         if self.taskbar_hwnd and not is_window_valid(self.taskbar_hwnd):
             logger.info("Taskbar lost — recreating widget")
             self._recreate_widget()
             return
 
-        # Look for newly attached monitors
+        # A monitor was connected or disconnected
         new_taskbars = find_all_taskbars()
         if len(new_taskbars) != len(self.taskbars):
             self.taskbars = new_taskbars
@@ -204,7 +206,19 @@ class PrayerWidget(QWidget):
                 saved_idx < len(self.taskbars)
                 and saved_idx != self.current_monitor_index
             ):
-                self._recreate_widget(target_monitor=saved_idx)
+                self._move_to_taskbar(saved_idx)
+                return
+
+        # Light/dark taskbar switched
+        if system_uses_dark() != self._theme.dark:
+            self._theme = system_theme()
+            self.update()
+
+        # A minute was missed (e.g. after sleep), else follow taskbar resizes
+        if self._current_minute() != self._minute:
+            self._tick()
+        else:
+            self._place()
 
     def _recreate_widget(self, target_monitor: int | None = None) -> None:
         """Schedule full widget recreation after a brief delay.
@@ -215,14 +229,10 @@ class PrayerWidget(QWidget):
 
         Args:
             target_monitor: Monitor index to inject into.  When *None*
-                            the widget keeps its ``current_monitor_index``
-                            (bug fix — the original incorrectly fell back
-                            to monitor 0).
+                            the widget keeps its ``current_monitor_index``.
         """
-        global _active_widget
-
-        self._update_timer.stop()
-        self._rescan_timer.stop()
+        self._tick_timer.stop()
+        self._housekeeping_timer.stop()
         self._data_refresh_timer.stop()
 
         # Preserve current monitor unless explicitly overridden
@@ -231,6 +241,7 @@ class PrayerWidget(QWidget):
         else:
             self.config["monitor_index"] = self.current_monitor_index
 
+        self._save_timer.stop()
         save_config(self.config)
 
         # Reset retry counter for the new creation attempt
@@ -260,6 +271,7 @@ class PrayerWidget(QWidget):
                         self._recreate_attempts,
                         self._MAX_RECREATE_RETRIES,
                     )
+                    new_widget.deleteLater()
                     QTimer.singleShot(
                         self._RECREATE_RETRY_DELAY_MS, self._do_recreate
                     )
@@ -289,12 +301,11 @@ class PrayerWidget(QWidget):
             taskbar_hwnd_int: Native window handle of the target taskbar.
         """
         self.taskbar_hwnd = taskbar_hwnd_int
-        my_hwnd = int(self.winId())
-        logger.info(f"Injecting my_hwnd={my_hwnd} into taskbar_hwnd={self.taskbar_hwnd}")
 
         # Ensure the native window is fully materialized
         self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
         my_hwnd = int(self.winId())
+        logger.info(f"Injecting my_hwnd={my_hwnd} into taskbar_hwnd={self.taskbar_hwnd}")
 
         success = inject_into_taskbar(my_hwnd, self.taskbar_hwnd)
         logger.info(f"Injection success: {success}")
@@ -313,148 +324,207 @@ class PrayerWidget(QWidget):
         Args:
             index: Zero-based index into ``self.taskbars``.
         """
+        self.taskbars = find_all_taskbars()
         if (
             not self.taskbars
             or index >= len(self.taskbars)
             or index == self.current_monitor_index
         ):
             return
-        self._recreate_widget(target_monitor=index)
+        self._move_to_taskbar(index)
+
+    def _move_to_taskbar(self, index: int) -> None:
+        """Re-parent the widget into another (living) taskbar right away."""
+        self._do_inject(self.taskbars[index][1])
+        if self.taskbar_hwnd is None:
+            self._recreate_widget(target_monitor=index)
+            return
+        self.current_monitor_index = index
+        self.config["monitor_index"] = index
+        self._save_timer.start()
+        self._place()
+        self.update()
 
     def adjust_position(self, delta: int) -> None:
         """Move the widget horizontally by *delta* pixels.
 
         Positive values shift left, negative values shift right.  The
-        new offset is persisted to ``config.json`` immediately.
+        new offset is written to ``config.json`` once moving has stopped.
 
         Args:
             delta: Pixel offset to apply.
         """
-        x_offset = self.config.get("x_offset", 185)
-        x_offset = max(10, x_offset + delta)
-        self.config["x_offset"] = x_offset
+        self._set_offset(self.config.get("x_offset", _DEFAULT_OFFSET) + delta)
+
+    def _set_offset(self, offset: int) -> None:
+        if self.taskbar_hwnd:
+            taskbar_width, _ = get_taskbar_rect(self.taskbar_hwnd)
+            offset = min(offset, max(10, taskbar_width - self._content_width()))
+        self.config["x_offset"] = max(10, offset)
+        self._place()
+        self._save_timer.start()
+
+    def _save_config(self) -> None:
         save_config(self.config)
-        self.update_widget()
+
+    def flush_pending_save(self) -> None:
+        """Write a pending position change now (e.g. before quitting)."""
+        if self._save_timer.isActive():
+            self._save_timer.stop()
+            self._save_config()
+
+    def _place(self) -> None:
+        """Size and position the widget in its taskbar (only if it changed)."""
+        if not self.taskbar_hwnd:
+            return
+        taskbar_width, taskbar_height = get_taskbar_rect(self.taskbar_hwnd)
+        if taskbar_height <= 0:
+            return
+        width = self._content_width()
+        height = taskbar_height - 6
+        x = taskbar_width - width - self.config.get("x_offset", _DEFAULT_OFFSET)
+        geometry = QRect(x, (taskbar_height - height) // 2, width, height)
+        if geometry != self.geometry():
+            self.setGeometry(geometry)
 
     # ------------------------------------------------------------------
     # Display update
     # ------------------------------------------------------------------
 
+    @property
+    def display_text(self) -> str:
+        """The text shown in the taskbar, e.g. "Isha   00:22"."""
+        return f"{self._name}   {self._countdown}" if self._countdown else self._name
+
+    @staticmethod
+    def _current_minute() -> str:
+        return datetime.now().strftime("%Y%m%d%H%M")
+
+    def _tick(self) -> None:
+        """Update the countdown and schedule the next update for the next minute."""
+        self.update_widget()
+        now = datetime.now()
+        ms_to_next_minute = (60 - now.second) * 1000 - now.microsecond // 1000
+        self._tick_timer.start(ms_to_next_minute + _TICK_SLACK_MS)
+
     def update_widget(self) -> None:
-        """Recalculate the countdown and update the displayed text.
+        """Recalculate the countdown and repaint if anything visible changed."""
+        name, countdown, warn = self._compute_display()
+        self._minute = self._current_minute()
+        if (name, countdown, warn) != (self._name, self._countdown, self._warn):
+            self._name, self._countdown, self._warn = name, countdown, warn
+            self.update()
+        self._place()
 
-        Called every 10 seconds by the update timer.  Determines the
-        next upcoming prayer, formats the display string with translated
-        prayer name and ``HH:MM`` countdown, and dynamically sizes the
-        widget to fit the text within the taskbar.
-        """
-        # Verify taskbar is still alive
-        if self.taskbar_hwnd and not is_window_valid(self.taskbar_hwnd):
-            self._recreate_widget()
-            return
-
+    def _compute_display(self) -> tuple[str, str, bool]:
+        """Return (prayer name or status text, "HH:MM" countdown, warn)."""
         now = datetime.now()
         today = now.date()
 
-        display_text = "Loading..."
-
         if today not in self.daily_times:
             if self._location_missing():
-                display_text = t("location_missing")
-            else:
-                display_text = t("date_missing")
-        else:
-            times_today = self.daily_times[today]
-            next_key: str | None = None
-            next_prayer_dt: datetime | None = None
+                return t("location_missing"), "", False
+            return t("date_missing"), "", False
 
-            for key in PRAYER_ORDER:
-                time_str = times_today.get(key)
-                if not time_str:
-                    continue
+        times_today = self.daily_times[today]
+        next_key: str | None = None
+        next_prayer_dt: datetime | None = None
 
-                prayer_dt = self._parse_prayer_time(time_str, now)
-                if prayer_dt > now:
-                    next_key = key
-                    next_prayer_dt = prayer_dt
-                    break
+        for key in PRAYER_ORDER:
+            time_str = times_today.get(key)
+            if not time_str:
+                continue
+            prayer_dt = self._parse_prayer_time(time_str, now)
+            if prayer_dt > now:
+                next_key = key
+                next_prayer_dt = prayer_dt
+                break
 
-            # All prayers passed today — look at tomorrow's fajr
-            if next_key is None:
-                tomorrow = today + timedelta(days=1)
-                if tomorrow in self.daily_times:
-                    fajr_str = self.daily_times[tomorrow].get("fajr")
-                    if fajr_str:
-                        tomorrow_now = now.replace(
-                            year=tomorrow.year,
-                            month=tomorrow.month,
-                            day=tomorrow.day,
-                        )
-                        next_prayer_dt = self._parse_prayer_time(
-                            fajr_str, tomorrow_now
-                        )
-                        next_key = "fajr"
+        # All prayers passed today — look at tomorrow's fajr
+        if next_key is None:
+            tomorrow = today + timedelta(days=1)
+            fajr_str = self.daily_times.get(tomorrow, {}).get("fajr")
+            if fajr_str:
+                next_prayer_dt = self._parse_prayer_time(
+                    fajr_str, now.replace(year=tomorrow.year, month=tomorrow.month,
+                                          day=tomorrow.day)
+                )
+                next_key = "fajr"
 
-            if next_key is None or next_prayer_dt is None:
-                display_text = t("no_data")
-            else:
-                # --- Countdown calculation ---
-                diff = next_prayer_dt - now
-                total_seconds = int(diff.total_seconds())
-                hours, remainder = divmod(max(total_seconds, 0), 3600)
-                minutes, _ = divmod(remainder, 60)
+        if next_key is None or next_prayer_dt is None:
+            return t("no_data"), "", False
 
-                # --- Colour: red-ish if < 15 minutes ---
-                if total_seconds <= 900:
-                    self.label.setStyleSheet(
-                        "color: #ff8b8b; background-color: transparent;"
-                        " border: none; padding: 0px;"
-                    )
-                else:
-                    self.label.setStyleSheet(
-                        "color: #e5e5e5; background-color: transparent;"
-                        " border: none; padding: 0px;"
-                    )
+        total_seconds = int((next_prayer_dt - now).total_seconds())
+        hours, remainder = divmod(max(total_seconds, 0), 3600)
+        minutes = remainder // 60
+        return get_prayer_name(next_key), f"{hours:02d}:{minutes:02d}", total_seconds <= 900
 
-                prayer_display_name = get_prayer_name(next_key)
-                display_text = f"{prayer_display_name}   {hours:02d}:{minutes:02d}"
+    def _content_width(self) -> int:
+        metrics = QFontMetricsF(self._font)
+        width = metrics.horizontalAdvance(self._name)
+        if self._countdown:
+            width += _GAP + metrics.horizontalAdvance(self._countdown)
+        return math.ceil(width) + 2 * _PADDING_H
 
-        self.label.setText(display_text)
+    def paintEvent(self, event) -> None:
+        th = self._theme
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # --- Dynamic width & position inside the taskbar ---
-        if self.taskbar_hwnd:
-            tb_w, tb_h = get_taskbar_rect(self.taskbar_hwnd)
-            if tb_h > 0:
-                fm = QFontMetrics(self.label.font())
-                text_width = fm.horizontalAdvance(display_text)
+        # Hover / pressed / open state, like Windows 11 taskbar buttons
+        flyout_open = self._flyout is not None and self._flyout.isVisible()
+        if self._pressed or self._hovered or flyout_open:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(th.subtle_pressed if self._pressed else th.subtle_hover)
+            p.drawRoundedRect(QRectF(self.rect()), 4, 4)
 
-                w = text_width + 24
-                h = tb_h - 6
-
-                x_offset = self.config.get("x_offset", 185)
-                x = tb_w - w - x_offset
-                y = (tb_h - h) // 2
-
-                logger.info(f"Setting geometry: x={x}, y={y}, w={w}, h={h} for text '{display_text}'")
-                self.setGeometry(x, y, w, h)
+        metrics = QFontMetricsF(self._font)
+        text_width = self._content_width() - 2 * _PADDING_H
+        x = (self.width() - text_width) / 2
+        baseline = (self.height() + metrics.ascent() - metrics.descent()) / 2
+        p.setFont(self._font)
+        p.setPen(th.critical if self._warn else th.text)
+        p.drawText(QPointF(x, baseline), self._name)
+        if self._countdown:
+            p.drawText(QPointF(x + metrics.horizontalAdvance(self._name) + _GAP, baseline),
+                       self._countdown)
+        p.end()
 
     # ------------------------------------------------------------------
     # Data refresh
     # ------------------------------------------------------------------
 
     def _refresh_data(self) -> None:
-        """Periodically check if API prayer data needs refreshing.
+        """Check in the background whether API prayer data needs refreshing.
 
-        Called every 30 minutes.  Uses :func:`refresh_if_needed` to
-        determine whether remaining future data is running low and, if
-        so, fetches fresh data from the Diyanet API.
+        Called every 30 minutes.  The request runs in a thread so the
+        taskbar never freezes while waiting for the network.
         """
-        cache_path = get_cache_path()
-        updated = refresh_if_needed(
-            self.config, cache_path, self.daily_times
-        )
-        if updated is not None:
-            self.daily_times = updated
+        if self._refreshing:
+            return
+        self._refreshing = True
+        config = dict(self.config)
+        daily_times = self.daily_times
+        bridge = self._bridge
+
+        def work():
+            try:
+                result = refresh_if_needed(config, get_cache_path(), daily_times)
+            except Exception:
+                logger.exception("Prayer data refresh failed")
+                result = None
+            try:
+                bridge.refreshed.emit(result)
+            except RuntimeError:
+                pass  # widget was recreated in the meantime
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_refreshed(self, result) -> None:
+        self._refreshing = False
+        if result is not None:
+            self.daily_times, self.hijri_dates = result
+            self.is_ramadan = is_ramadan_today(self.hijri_dates)
             logger.info("Prayer data refreshed from API")
             self.update_widget()
 
@@ -464,6 +534,7 @@ class PrayerWidget(QWidget):
         Called by the settings window when the user changes location,
         uploads an Excel file, or switches language.
         """
+        self.flush_pending_save()
         self.config = load_config()
         set_language(self.config.get('language', 'en'))
         cache_path = get_cache_path()
@@ -479,6 +550,15 @@ class PrayerWidget(QWidget):
     # Mouse events
     # ------------------------------------------------------------------
 
+    def enterEvent(self, event) -> None:
+        self._hovered = True
+        self.update()
+
+    def leaveEvent(self, event) -> None:
+        self._hovered = False
+        self._pressed = False
+        self.update()
+
     def mousePressEvent(self, event) -> None:
         """Handle mouse button presses.
 
@@ -487,29 +567,30 @@ class PrayerWidget(QWidget):
         - **Middle click**: begin horizontal drag to reposition.
         """
         if event.button() == Qt.MouseButton.MiddleButton:
-            self._dragging = True
-            self._drag_start_x = event.globalPosition().x()
+            self._drag_origin = (event.globalPosition().x(),
+                                 self.config.get("x_offset", _DEFAULT_OFFSET))
         elif event.button() in (
             Qt.MouseButton.LeftButton,
             Qt.MouseButton.RightButton,
         ):
+            self._pressed = True
+            self.update()
             if not self.daily_times and self._location_missing():
                 self.open_settings()
             else:
                 self.show_modern_menu()
 
     def mouseMoveEvent(self, event) -> None:
-        """Track horizontal drag movement while middle button is held."""
-        if self._dragging:
-            current_x = event.globalPosition().x()
-            dx = int(self._drag_start_x - current_x)
-            self._drag_start_x = current_x
-            self.adjust_position(dx)
+        """Follow the mouse while the middle button is held."""
+        if self._drag_origin is not None:
+            start_x, start_offset = self._drag_origin
+            self._set_offset(start_offset + int(start_x - event.globalPosition().x()))
 
     def mouseReleaseEvent(self, event) -> None:
-        """End drag on middle button release."""
         if event.button() == Qt.MouseButton.MiddleButton:
-            self._dragging = False
+            self._drag_origin = None
+        self._pressed = False
+        self.update()
 
     # ------------------------------------------------------------------
     # Flyout menu
@@ -524,18 +605,27 @@ class PrayerWidget(QWidget):
 
     def open_settings(self) -> None:
         """Open the settings window (used by the flyout and the tray icon)."""
-        from src.settings_window import SettingsWindow
-        self._settings_window = SettingsWindow(self)
-        self._settings_window.show()
-        self._settings_window.raise_()
-        self._settings_window.activateWindow()
+        from src.settings_window import show_settings
+        show_settings()
+
+    def _prewarm_flyout(self) -> None:
+        """Build and discard one flyout so the first real one opens instantly."""
+        from src.flyout import PrayerFlyout
+        try:
+            PrayerFlyout(self).deleteLater()
+        except Exception:
+            logger.exception("Flyout prewarm failed")
+
+    def _on_flyout_closed(self) -> None:
+        self._flyout_closed_at = time.monotonic()
+        self.update()
 
     def show_modern_menu(self) -> None:
         """Open (or close) the Win11-style prayer flyout panel.
 
         If a flyout is already visible it is closed.  Otherwise a new
-        ``PrayerFlyout`` is created and animated with a slide-up +
-        opacity transition.
+        ``PrayerFlyout`` is created 12 px above the taskbar, kept inside
+        the screen, and animated with a short slide-up + fade.
         """
         # Lazy import to break circular dependency (flyout imports widget)
         from src.flyout import PrayerFlyout
@@ -543,7 +633,10 @@ class PrayerWidget(QWidget):
         # Toggle: close if already open
         if self._flyout is not None and self._flyout.isVisible():
             self._flyout.close()
-            self._flyout = None
+            return
+
+        # The click that took the focus away has just closed the flyout
+        if time.monotonic() - self._flyout_closed_at < _REOPEN_GUARD_S:
             return
 
         # Dispose of stale flyout (prevent memory leak)
@@ -551,46 +644,39 @@ class PrayerWidget(QWidget):
             self._flyout.deleteLater()
             self._flyout = None
 
-        # Refresh taskbar list in case monitors changed
-        self.taskbars = find_all_taskbars()
-
         self._flyout = PrayerFlyout(self)
-
-        # Position the flyout centred above the widget
-        left, top, right, bottom = get_window_rect(int(self.winId()))
-        flyout_w = self._flyout.sizeHint().width()
+        self._flyout.closed.connect(self._on_flyout_closed)
+        flyout_w = self._flyout.width()
         flyout_h = self._flyout.sizeHint().height()
 
-        menu_x = left + (right - left) // 2 - flyout_w // 2
-        menu_y = top - flyout_h - 12
+        # Centre above the widget (Win32 gives physical pixels)
+        left, top, right, _bottom = get_window_rect(int(self.winId()))
+        anchor, screen = native_to_qt((left + right) // 2, top)
+        avail = (screen or QGuiApplication.primaryScreen()).availableGeometry()
+        menu_x = anchor.x() - flyout_w // 2
+        menu_x = max(avail.left() + 12, min(menu_x, avail.right() - flyout_w - 12))
+        menu_y = max(avail.top() + 12, min(anchor.y(), avail.bottom()) - flyout_h - 12)
 
-        # Slide-up animation: start 18 px lower and glide up
-        start_y = menu_y + 18
+        # Short slide-up from 8 px below
+        start_y = menu_y + 8
         self._flyout.setGeometry(menu_x, start_y, flyout_w, flyout_h)
         self._flyout.setWindowOpacity(0.0)
         self._flyout.show()
         self._flyout.activateWindow()
+        self.update()
 
-        # Position animation
         self._slide_anim = QPropertyAnimation(self._flyout, b"geometry")
-        self._slide_anim.setDuration(280)
-        self._slide_anim.setStartValue(
-            QRect(menu_x, start_y, flyout_w, flyout_h)
-        )
-        self._slide_anim.setEndValue(
-            QRect(menu_x, menu_y, flyout_w, flyout_h)
-        )
-        self._slide_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        self._slide_anim.setDuration(160)
+        self._slide_anim.setStartValue(QRect(menu_x, start_y, flyout_w, flyout_h))
+        self._slide_anim.setEndValue(QRect(menu_x, menu_y, flyout_w, flyout_h))
+        self._slide_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._slide_anim.start()
 
-        # Opacity animation
-        self._opacity_anim = QPropertyAnimation(
-            self._flyout, b"windowOpacity"
-        )
-        self._opacity_anim.setDuration(250)
+        self._opacity_anim = QPropertyAnimation(self._flyout, b"windowOpacity")
+        self._opacity_anim.setDuration(120)
         self._opacity_anim.setStartValue(0.0)
         self._opacity_anim.setEndValue(1.0)
-        self._opacity_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        self._opacity_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._opacity_anim.start()
 
     # ------------------------------------------------------------------

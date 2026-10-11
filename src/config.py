@@ -8,6 +8,7 @@ PyInstaller-frozen environments.
 
 import json
 import os
+import shutil
 import sys
 
 
@@ -25,11 +26,24 @@ else:
     SCRIPT_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 """Resolved path of the main project directory (one level above src/)."""
 
-CONFIG_FILE: str = os.path.join(SCRIPT_DIR, "config.json")
+if is_frozen():
+    # Outside the app folder, so settings survive updates and rebuilds
+    USER_DIR: str = os.path.join(os.environ.get("APPDATA") or SCRIPT_DIR, "PrayerTaskbar")
+else:
+    USER_DIR: str = SCRIPT_DIR
+"""Directory for config, cache and log (%APPDATA%\\PrayerTaskbar when frozen)."""
+
+CONFIG_FILE: str = os.path.join(USER_DIR, "config.json")
 """Full path to the configuration file."""
 
-DATA_DIR: str = os.path.join(SCRIPT_DIR, "data")
+DATA_DIR: str = os.path.join(USER_DIR, "data")
 """Full path to the data/ subdirectory used for caches and local storage."""
+
+LOG_FILE: str = os.path.join(USER_DIR, "widget_debug.log")
+"""Full path to the debug log."""
+
+APP_VERSION: str = "1.0.0"
+"""Shown in the settings; keep in sync with version_info.txt."""
 
 # ---------------------------------------------------------------------------
 # Default configuration
@@ -95,8 +109,27 @@ def save_config(config: dict) -> None:
     Args:
         config: The configuration dictionary to save.
     """
+    os.makedirs(USER_DIR, exist_ok=True)
     with open(CONFIG_FILE, "w", encoding="utf-8") as fh:
         json.dump(config, fh, indent=2, ensure_ascii=False)
+
+
+def migrate_legacy_files() -> None:
+    """Move config and cache from the app folder to %APPDATA% (first start).
+
+    Older versions kept them next to the exe, where updates and rebuilds
+    of the app folder delete them.
+    """
+    if USER_DIR == SCRIPT_DIR or os.path.exists(CONFIG_FILE):
+        return
+    old_config = os.path.join(SCRIPT_DIR, "config.json")
+    if not os.path.isfile(old_config):
+        return
+    os.makedirs(USER_DIR, exist_ok=True)
+    shutil.copy2(old_config, CONFIG_FILE)
+    old_data = os.path.join(SCRIPT_DIR, "data")
+    if os.path.isdir(old_data) and not os.path.exists(DATA_DIR):
+        shutil.copytree(old_data, DATA_DIR)
 
 
 def get_data_dir() -> str:
@@ -119,9 +152,6 @@ def get_cache_path() -> str:
         Absolute path to ``prayer_times_cache.json``.
     """
     return os.path.join(get_data_dir(), "prayer_times_cache.json")
-
-
-    pass
 
 
 def get_base_dir() -> str:

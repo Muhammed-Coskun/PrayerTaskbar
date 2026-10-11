@@ -7,16 +7,39 @@ so it is visible that the app is running and can be controlled there:
 - Left click: open the prayer times flyout.
 - Right click: context menu with prayer times, settings and quit.
 - Tooltip: the current countdown shown in the taskbar widget.
+
+Like the Windows system icons, the icon is a monochrome silhouette:
+white on a dark taskbar, black on a light one.
 """
 
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
-from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QIcon, QPainter, QPixmap
 
 from src.i18n import t
 from src import widget as widget_module
+from src.theme import system_uses_dark, get_theme
 
 _TOOLTIP_REFRESH_MS = 10_000
+
+
+def _silhouette(icon: QIcon, dark_taskbar: bool) -> QIcon:
+    """Recolor the app icon to a single color, keeping its shape (alpha)."""
+    color = get_theme(dark_taskbar).text
+    result = QIcon()
+    for size in (16, 20, 24, 32, 48, 64):
+        pixmap = icon.pixmap(size, size)
+        if pixmap.isNull():
+            continue
+        tinted = QPixmap(pixmap.size())
+        tinted.fill(Qt.GlobalColor.transparent)
+        p = QPainter(tinted)
+        p.drawPixmap(0, 0, pixmap)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+        p.fillRect(tinted.rect(), color)
+        p.end()
+        result.addPixmap(tinted)
+    return result if not result.isNull() else icon
 
 
 class PrayerTray(QSystemTrayIcon):
@@ -28,7 +51,10 @@ class PrayerTray(QSystemTrayIcon):
     """
 
     def __init__(self, icon: QIcon, parent=None) -> None:
-        super().__init__(icon, parent)
+        super().__init__(parent)
+        self._app_icon = icon
+        self._dark_taskbar = system_uses_dark()
+        self.setIcon(_silhouette(icon, self._dark_taskbar))
 
         self._menu = QMenu()
         # Rebuild on every open so a language change applies immediately
@@ -36,10 +62,10 @@ class PrayerTray(QSystemTrayIcon):
         self.setContextMenu(self._menu)
         self.activated.connect(self._on_activated)
 
-        self._update_tooltip()
-        self._tooltip_timer = QTimer(self)
-        self._tooltip_timer.timeout.connect(self._update_tooltip)
-        self._tooltip_timer.start(_TOOLTIP_REFRESH_MS)
+        self._refresh()
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.timeout.connect(self._refresh)
+        self._refresh_timer.start(_TOOLTIP_REFRESH_MS)
 
     def _build_menu(self) -> None:
         self._menu.clear()
@@ -63,11 +89,16 @@ class PrayerTray(QSystemTrayIcon):
         w.show_modern_menu()
 
     def _open_settings(self) -> None:
-        w = widget_module._active_widget
-        if w is not None:
-            w.open_settings()
+        from src.settings_window import show_settings
+        show_settings()
 
-    def _update_tooltip(self) -> None:
+    def _refresh(self) -> None:
+        """Update the tooltip and follow a light/dark taskbar switch."""
         w = widget_module._active_widget
-        text = w.label.text() if w is not None else ""
+        text = w.display_text if w is not None else ""
         self.setToolTip(f"PrayerTaskbar\n{text}" if text else "PrayerTaskbar")
+
+        dark = system_uses_dark()
+        if dark != self._dark_taskbar:
+            self._dark_taskbar = dark
+            self.setIcon(_silhouette(self._app_icon, dark))
