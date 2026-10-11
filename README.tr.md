@@ -36,7 +36,7 @@ PrayerTaskbar, bir sonraki namaza kalan süreyi saatin hemen yanında gösterir.
 - **Şehriniz:** Şehrinizi arayın, namaz vakitleri Diyanet'ten yüklenir.
 - **Windows 11 için tasarlandı:** Açık ve koyu moda ve vurgu renginize uyum sağlar.
 - **Üç dil:** İngilizce, Türkçe ve Almanca.
-- **Otomatik güncellemeler:** Yeni bir sürüm çıktığında uygulama haber verir ve tek tıkla güncellenir.
+- **Otomatik güncellemeler:** Yeni sürümler uygulama başlarken kendiliğinden yüklenir. Bunu kapatırsanız uygulama yalnızca haber verir.
 
 </div>
 

@@ -1,13 +1,13 @@
 """
 updater.py — Finds newer releases on GitHub and installs them.
 
-Shortly after start and then once a day (unless automatic updates are
-turned off in the settings), and whenever "Check for updates" is clicked,
-the latest GitHub release is compared with the running version.  When it
-is newer, ``available`` is emitted: the tray shows a notification, and
-the flyout, tray menu and settings offer to update.  Updating downloads
-the setup and starts it; the setup closes the app, installs the new
-version and starts it again.
+Each time the app starts (installed app only) and whenever "Check for
+updates" is clicked, the latest GitHub release is compared with the
+running version.  A newer one is offered in the flyout, the tray menu and
+the settings.  When the check at start finds one, it is installed right
+away if automatic updates are on; otherwise the tray shows a
+notification.  Installing downloads the setup, starts it and closes the
+app; the setup replaces the app and starts the new version.
 """
 
 import json
@@ -16,10 +16,11 @@ import os
 import subprocess
 import tempfile
 import threading
+import time
 import urllib.request
 from datetime import datetime
 
-from PyQt6.QtCore import QObject, QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import QCoreApplication, QObject, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 
 from src.config import APP_VERSION, is_frozen
@@ -30,7 +31,9 @@ RELEASES_API = "https://api.github.com/repos/Muhammed-Coskun/PrayerTaskbar/relea
 SETUP_ASSET = "PrayerTaskbar-Setup.exe"
 
 _FIRST_CHECK_MS = 10_000
-_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
+_RETRY_MS = 60_000      # right after logging in, the network may not be up yet
+_RETRIES = 3
+_MIN_CHECK_MS = 2_000   # keep "Checking for updates…" on screen long enough to read
 _HEADERS = {"User-Agent": "PrayerTaskbar", "Accept": "application/vnd.github+json"}
 
 _instance: "Updater | None" = None
@@ -59,13 +62,15 @@ def fetch_latest_release() -> dict:
 
 
 class Updater(QObject):
-    """Checks for updates in the background and installs them on request."""
+    """Checks for updates in the background and installs them."""
 
     available = pyqtSignal(dict)   # a newer release was found
+    notify = pyqtSignal(dict)      # tell the user about it (found at start, not installed)
     state_changed = pyqtSignal()   # a check started or finished
     progress = pyqtSignal(int)     # download progress in percent
     failed = pyqtSignal()          # download or start of the setup failed
     _checked = pyqtSignal(object, bool)  # (newer release or None, failed), to the UI thread
+    _downloaded = pyqtSignal(str)        # path of the downloaded setup, to the UI thread
 
     def __init__(self, current_version: str = APP_VERSION, parent=None) -> None:
         super().__init__(parent)
@@ -75,34 +80,35 @@ class Updater(QObject):
         self.checking = False
         self.check_failed = False
         self.last_checked: datetime | None = None
-        self.automatic = True
+        self.automatic = True   # install an update found at start without asking
+        self._at_start = False  # the running check is the one at start
+        self._installing_automatically = False
+        self._check_started = 0.0
+        self._retries_left = _RETRIES
+        self._retry_timer = QTimer(self)
+        self._retry_timer.setSingleShot(True)
+        self._retry_timer.setInterval(_RETRY_MS)
+        self._retry_timer.timeout.connect(self._check_at_start)
         self._checked.connect(self._on_checked)
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._automatic_check)
+        self._downloaded.connect(self._run_setup)
+        self.failed.connect(self._on_install_failed)
 
     def start(self, automatic: bool = True) -> None:
-        """Check soon after start, then once a day (installed app only)."""
+        """Check once, shortly after the app started (installed app only)."""
         self.automatic = automatic
-        if not is_frozen():
-            return
-        QTimer.singleShot(_FIRST_CHECK_MS, self._automatic_check)
-        self._timer.start(_CHECK_INTERVAL_MS)
+        if is_frozen():
+            QTimer.singleShot(_FIRST_CHECK_MS, self._check_at_start)
 
-    def set_automatic(self, enabled: bool) -> None:
-        """Turn the daily check on or off; turning it on checks right away."""
-        self.automatic = enabled
-        if enabled:
-            self.check()
+    def _check_at_start(self) -> None:
+        self.check(at_start=True)
 
-    def _automatic_check(self) -> None:
-        if self.automatic:
-            self.check()
-
-    def check(self) -> None:
+    def check(self, at_start: bool = False) -> None:
         """Look for a newer release in the background (also used by the button)."""
-        if self.checking:
+        if self.checking or self.installing:
             return
         self.checking = True
+        self._at_start = at_start
+        self._check_started = time.monotonic()
         self.state_changed.emit()
         threading.Thread(target=self._check, daemon=True).start()
 
@@ -117,15 +123,35 @@ class Updater(QObject):
         self._emit(self._checked, release if newer else None, False)
 
     def _on_checked(self, release, failed: bool) -> None:
+        # A quick answer would only flash "Checking for updates…"
+        elapsed_ms = (time.monotonic() - self._check_started) * 1000
+        wait_ms = max(0, int(_MIN_CHECK_MS - elapsed_ms))
+        QTimer.singleShot(wait_ms, lambda: self._finish_check(release, failed))
+
+    def _finish_check(self, release, failed: bool) -> None:
         self.checking = False
         self.check_failed = failed
         if not failed:
             self.last_checked = datetime.now()
+            self._retry_timer.stop()
         if release is not None:
             logger.info(f"Update available: {release['version']}")
             self.update = release
             self.available.emit(release)
         self.state_changed.emit()
+
+        if not self._at_start:
+            return
+        self._at_start = False
+        if failed:
+            if self._retries_left > 0:
+                self._retries_left -= 1
+                self._retry_timer.start()
+        elif release is not None:
+            if self.automatic:
+                self.install(automatically=True)
+            else:
+                self.notify.emit(release)
 
     def _emit(self, signal, *args) -> None:
         try:
@@ -133,20 +159,24 @@ class Updater(QObject):
         except RuntimeError:
             pass  # app is shutting down
 
-    def install(self) -> None:
+    def install(self, automatically: bool = False) -> None:
         """Download the new setup and start it (it updates and restarts the app)."""
         if self.installing or self.update is None:
             return
         url = self.update.get("download")
         if not url:
-            # No setup attached to the release: let the user download it
-            QDesktopServices.openUrl(QUrl(self.update.get("page") or ""))
+            # No setup attached to the release: the user has to download it
+            if automatically:
+                self.notify.emit(self.update)
+            else:
+                QDesktopServices.openUrl(QUrl(self.update.get("page") or ""))
             return
         self.installing = True
+        self._installing_automatically = automatically
         self.progress.emit(0)
-        threading.Thread(target=self._download_and_run, args=(url,), daemon=True).start()
+        threading.Thread(target=self._download, args=(url,), daemon=True).start()
 
-    def _download_and_run(self, url: str) -> None:
+    def _download(self, url: str) -> None:
         target = os.path.join(tempfile.gettempdir(), SETUP_ASSET)
         try:
             request = urllib.request.Request(url, headers={"User-Agent": "PrayerTaskbar"})
@@ -160,18 +190,39 @@ class Updater(QObject):
                     if total:
                         self._emit(self.progress, done * 100 // total)
             os.replace(target + ".part", target)
-            # Keep "Start with Windows" and the desktop icon as the user has them
-            subprocess.Popen([target, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
-                              "/MERGETASKS=!autostart,!desktopicon"])
-            logger.info(f"Started update to {self.update['version']}")
         except Exception:
-            logger.exception("Update failed")
+            logger.exception("Update download failed")
             self.installing = False
             self._emit(self.failed)
+            return
+        self._emit(self._downloaded, target)
+
+    def _run_setup(self, target: str) -> None:
+        # Automatic updates show no setup window at all
+        mode = "/VERYSILENT" if self._installing_automatically else "/SILENT"
+        try:
+            # Keep "Start with Windows" and the desktop icon as the user has them
+            subprocess.Popen([target, mode, "/SUPPRESSMSGBOXES", "/NORESTART",
+                              "/MERGETASKS=!autostart,!desktopicon"])
+        except OSError:
+            logger.exception("Could not start the setup")
+            self.installing = False
+            self.failed.emit()
+            return
+        logger.info(f"Started update to {self.update['version']}")
+        # Close properly (saves the settings, removes the tray icon); the
+        # setup starts the new version when it is done
+        QCoreApplication.quit()
+
+    def _on_install_failed(self) -> None:
+        if self._installing_automatically:
+            # Let the user update by hand instead
+            self._installing_automatically = False
+            self.notify.emit(self.update)
 
 
 def start(parent=None, automatic: bool = True) -> Updater:
-    """Create the app-wide updater and start the periodic checks."""
+    """Create the app-wide updater and schedule the check at start."""
     global _instance
     _instance = Updater(parent=parent)
     _instance.start(automatic)

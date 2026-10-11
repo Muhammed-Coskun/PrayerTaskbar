@@ -42,7 +42,7 @@ DATA_DIR: str = os.path.join(USER_DIR, "data")
 LOG_FILE: str = os.path.join(USER_DIR, "widget_debug.log")
 """Full path to the debug log."""
 
-APP_VERSION: str = "1.1.1"
+APP_VERSION: str = "1.1.2"
 """Shown in the settings; keep in sync with version_info.txt."""
 
 # ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ DEFAULT_CONFIG: dict = {
     "location_name": "",
     "data_source": "api",       # 'api' or 'excel'
     "excel_path": None,
-    "auto_update": True,        # look for new versions once a day
+    "auto_update": True,        # install new versions when the app starts
 }
 """
 Default values for every recognised configuration key.

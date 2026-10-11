@@ -38,7 +38,7 @@ PrayerTaskbar shows the time until the next prayer next to your clock. One click
 - **Your city:** Search for your city and the prayer times are loaded from Diyanet.
 - **Made for Windows 11:** Follows light and dark mode and your accent color.
 - **Three languages:** English, Turkish and German.
-- **Automatic updates:** When a new version is out, the app lets you know and updates with one click.
+- **Automatic updates:** New versions install themselves when the app starts. If you turn this off, the app just lets you know.
 
 </div>
 

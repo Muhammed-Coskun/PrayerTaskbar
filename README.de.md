@@ -36,7 +36,7 @@ PrayerTaskbar zeigt neben der Uhr, wie lange es bis zum nächsten Gebet dauert. 
 - **Deine Stadt:** Such nach deiner Stadt, die Gebetszeiten kommen von Diyanet.
 - **Gemacht für Windows 11:** Passt sich dem hellen und dunklen Modus und deiner Akzentfarbe an.
 - **Drei Sprachen:** Englisch, Türkisch und Deutsch.
-- **Automatische Updates:** Gibt es eine neue Version, meldet sich die App und aktualisiert sich mit einem Klick.
+- **Automatische Updates:** Neue Versionen installieren sich beim Start von selbst. Schaltest du das aus, sagt dir die App nur Bescheid.
 
 </div>
 

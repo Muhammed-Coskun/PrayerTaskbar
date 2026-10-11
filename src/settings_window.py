@@ -6,6 +6,7 @@ setting cards grouped into:
 - Prayer times: location search (Diyanet API) and Excel import
 - Taskbar: screen and position of the widget
 - General: language and autostart
+- Updates: update status, "Check for updates" and automatic updates
 - About: version, project link and quitting the app
 
 Every change applies immediately; there is no save button.
@@ -27,7 +28,8 @@ from src import autostart
 from src import updater
 from src import widget as widget_module
 from src.config import APP_VERSION, load_config, save_config, get_cache_path, get_data_dir
-from src.controls import ComboBox, SettingsCard, ToggleSwitch, accent_button, hyperlink_button
+from src.controls import (ComboBox, SettingsCard, SpinningIcon, ToggleSwitch, accent_button,
+                          hyperlink_button)
 from src.data_loader import search_locations, fetch_prayer_times, save_cache, get_coordinates
 from src.i18n import t, set_language, format_date
 from src.theme import (app_theme, css, font, icon_font, set_caption_color, set_dark_title_bar,
@@ -228,7 +230,7 @@ class SettingsWindow(QWidget):
 
         body = QWidget()
         bv = QVBoxLayout(body)
-        # Indent to the card title: 16 margin + 22 icon + 16 spacing
+        # Indent to the card title: 12 margin + 30 icon slot + 12 spacing
         bv.setContentsMargins(54, 12, 16, 14)
         bv.setSpacing(8)
 
@@ -594,7 +596,8 @@ class SettingsWindow(QWidget):
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         button.setEnabled(up is not None and not checking)
         button.clicked.connect(self._check_for_updates)
-        return SettingsCard(self.theme, GLYPH_SYNC, title, description, button)
+        icon = SpinningIcon(GLYPH_SYNC, self.theme.accent) if checking else GLYPH_SYNC
+        return SettingsCard(self.theme, icon, title, description, button)
 
     def _refresh_update_card(self) -> None:
         """Swap in a new update card for the current state."""
@@ -638,7 +641,7 @@ class SettingsWindow(QWidget):
             cfg["auto_update"] = checked
             save_config(cfg)
         if updater.instance() is not None:
-            updater.instance().set_automatic(checked)
+            updater.instance().automatic = checked
 
     # ------------------------------------------------------------------
     # About

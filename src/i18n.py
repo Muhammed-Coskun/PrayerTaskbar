@@ -101,6 +101,8 @@ TRANSLATIONS = {
         "update_menu": "Update to {version}",
         "update_notify_title": "Update available",
         "update_notify_body": "PrayerTaskbar {version} is ready. Click to update.",
+        "update_installed_title": "Update installed",
+        "update_installed_body": "PrayerTaskbar is now on version {version}.",
         "update_downloading": "Downloading… {percent}%",
         "update_failed": "Update failed. Please try again later.",
         "updates": "Updates",
@@ -113,7 +115,7 @@ TRANSLATIONS = {
         "version_label": "Version {version}",
         "last_checked": "Last checked: {time}",
         "auto_update_title": "Automatic updates",
-        "auto_update_desc": "Look for new versions once a day and let you know",
+        "auto_update_desc": "Install new versions automatically when the app starts",
 
         # Hijri month names (1 = Muharram)
         "hijri_months": {
@@ -249,6 +251,8 @@ TRANSLATIONS = {
         "update_menu": "{version} sürümüne güncelle",
         "update_notify_title": "Güncelleme mevcut",
         "update_notify_body": "PrayerTaskbar {version} hazır. Güncellemek için tıklayın.",
+        "update_installed_title": "Güncelleme yüklendi",
+        "update_installed_body": "PrayerTaskbar artık {version} sürümünde.",
         "update_downloading": "İndiriliyor… %{percent}",
         "update_failed": "Güncelleme başarısız oldu. Lütfen daha sonra tekrar deneyin.",
         "updates": "Güncellemeler",
@@ -261,7 +265,7 @@ TRANSLATIONS = {
         "version_label": "Sürüm {version}",
         "last_checked": "Son denetim: {time}",
         "auto_update_title": "Otomatik güncellemeler",
-        "auto_update_desc": "Günde bir kez yeni sürümleri ara ve haber ver",
+        "auto_update_desc": "Yeni sürümleri uygulama başlarken otomatik olarak yükle",
 
         # Hijri month names (1 = Muharrem)
         "hijri_months": {
@@ -397,6 +401,8 @@ TRANSLATIONS = {
         "update_menu": "Auf {version} aktualisieren",
         "update_notify_title": "Update verfügbar",
         "update_notify_body": "PrayerTaskbar {version} ist bereit. Zum Aktualisieren klicken.",
+        "update_installed_title": "Update installiert",
+        "update_installed_body": "PrayerTaskbar ist jetzt auf Version {version}.",
         "update_downloading": "Wird geladen… {percent} %",
         "update_failed": "Update fehlgeschlagen. Bitte versuche es später erneut.",
         "updates": "Updates",
@@ -409,7 +415,7 @@ TRANSLATIONS = {
         "version_label": "Version {version}",
         "last_checked": "Zuletzt gesucht: {time}",
         "auto_update_title": "Automatische Updates",
-        "auto_update_desc": "Einmal am Tag nach neuen Versionen suchen und Bescheid geben",
+        "auto_update_desc": "Neue Versionen beim Start der App automatisch installieren",
 
         # Hijri month names (1 = Muharram)
         "hijri_months": {
