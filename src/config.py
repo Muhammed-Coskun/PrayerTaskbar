@@ -42,7 +42,7 @@ DATA_DIR: str = os.path.join(USER_DIR, "data")
 LOG_FILE: str = os.path.join(USER_DIR, "widget_debug.log")
 """Full path to the debug log."""
 
-APP_VERSION: str = "1.0.0"
+APP_VERSION: str = "1.1.0"
 """Shown in the settings; keep in sync with version_info.txt."""
 
 # ---------------------------------------------------------------------------

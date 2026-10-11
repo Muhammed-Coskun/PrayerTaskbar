@@ -95,6 +95,15 @@ TRANSLATIONS = {
         "quit_title": "Quit PrayerTaskbar",
         "quit_desc": "Removes the widget from the taskbar until you start the app again",
 
+        # Updates
+        "update_available": "Version {version} is available",
+        "update_now": "Update",
+        "update_menu": "Update to {version}",
+        "update_notify_title": "Update available",
+        "update_notify_body": "PrayerTaskbar {version} is ready. Click to update.",
+        "update_downloading": "Downloading… {percent}%",
+        "update_failed": "Update failed. Please try again later.",
+
         # Hijri month names (1 = Muharram)
         "hijri_months": {
             1: "Muharram",
@@ -223,6 +232,15 @@ TRANSLATIONS = {
         "quit_title": "PrayerTaskbar'ı kapat",
         "quit_desc": "Uygulamayı yeniden başlatana kadar widget görev çubuğundan kaldırılır",
 
+        # Updates
+        "update_available": "Sürüm {version} mevcut",
+        "update_now": "Güncelle",
+        "update_menu": "{version} sürümüne güncelle",
+        "update_notify_title": "Güncelleme mevcut",
+        "update_notify_body": "PrayerTaskbar {version} hazır. Güncellemek için tıklayın.",
+        "update_downloading": "İndiriliyor… %{percent}",
+        "update_failed": "Güncelleme başarısız oldu. Lütfen daha sonra tekrar deneyin.",
+
         # Hijri month names (1 = Muharrem)
         "hijri_months": {
             1: "Muharrem",
@@ -350,6 +368,15 @@ TRANSLATIONS = {
         "about_desc": "Version {version} · Gebetszeiten von Diyanet",
         "quit_title": "PrayerTaskbar beenden",
         "quit_desc": "Entfernt das Widget aus der Taskleiste, bis du die App wieder startest",
+
+        # Updates
+        "update_available": "Version {version} ist verfügbar",
+        "update_now": "Aktualisieren",
+        "update_menu": "Auf {version} aktualisieren",
+        "update_notify_title": "Update verfügbar",
+        "update_notify_body": "PrayerTaskbar {version} ist bereit. Zum Aktualisieren klicken.",
+        "update_downloading": "Wird geladen… {percent} %",
+        "update_failed": "Update fehlgeschlagen. Bitte versuche es später erneut.",
 
         # Hijri month names (1 = Muharram)
         "hijri_months": {

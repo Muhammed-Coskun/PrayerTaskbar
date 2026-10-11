@@ -367,6 +367,11 @@ class PrayerWidget(QWidget):
     def _save_config(self) -> None:
         save_config(self.config)
 
+    def remember(self, key: str, value) -> None:
+        """Store a value in the config; it is written to disk shortly after."""
+        self.config[key] = value
+        self._save_timer.start()
+
     def flush_pending_save(self) -> None:
         """Write a pending position change now (e.g. before quitting)."""
         if self._save_timer.isActive():

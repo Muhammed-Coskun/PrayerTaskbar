@@ -1,5 +1,7 @@
 <div align="center">
 
+**English** · [Türkçe](README.tr.md) · [Deutsch](README.de.md)
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./.github/assets/logo-white.png">
   <img src="./.github/assets/logo.png" alt="PrayerTaskbar logo" title="PrayerTaskbar logo" width="140"/>
@@ -36,6 +38,7 @@ PrayerTaskbar shows the time until the next prayer next to your clock. One click
 - **Your city:** Search for your city and the prayer times are loaded from Diyanet.
 - **Made for Windows 11:** Follows light and dark mode and your accent color.
 - **Three languages:** English, Turkish and German.
+- **Automatic updates:** When a new version is out, the app lets you know and updates with one click.
 
 </div>
 

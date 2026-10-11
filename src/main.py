@@ -19,6 +19,7 @@ from src.config import (load_config, get_cache_path, is_frozen, get_executable_p
 from src.i18n import set_language
 from src.data_loader import load_prayer_data
 from src import autostart
+from src import updater
 from src import widget as widget_module
 from src.theme import font
 from src.tray import PrayerTray
@@ -119,6 +120,9 @@ def main():
     prayer_widget = widget_module.PrayerWidget(daily_times, hijri_dates, config)
     prayer_widget.show()
     widget_module._active_widget = prayer_widget
+
+    # Looks for new releases on GitHub (installed app only)
+    updater.start(parent=app)
 
     tray = PrayerTray(icon)
     tray.show()

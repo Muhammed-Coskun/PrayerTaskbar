@@ -7,6 +7,7 @@ so it is visible that the app is running and can be controlled there:
 - Left click: open the prayer times flyout.
 - Right click: context menu with prayer times, settings and quit.
 - Tooltip: the current countdown shown in the taskbar widget.
+- Notification: once per version when an update is available.
 
 Like the Windows system icons, the icon is a monochrome silhouette:
 white on a dark taskbar, black on a light one.
@@ -17,6 +18,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QPainter, QPixmap
 
 from src.i18n import t
+from src import updater
 from src import widget as widget_module
 from src.theme import system_uses_dark, get_theme
 
@@ -67,12 +69,37 @@ class PrayerTray(QSystemTrayIcon):
         self._refresh_timer.timeout.connect(self._refresh)
         self._refresh_timer.start(_TOOLTIP_REFRESH_MS)
 
+        if updater.instance() is not None:
+            updater.instance().available.connect(self._on_update_available)
+        self.messageClicked.connect(self._start_update)
+
     def _build_menu(self) -> None:
         self._menu.clear()
         self._menu.addAction(t("prayer_times"), self.show_prayer_times)
         self._menu.addAction(t("settings"), self._open_settings)
+        update = updater.available_update()
+        if update:
+            self._menu.addAction(t("update_menu").format(version=update["version"]),
+                                 self._start_update)
         self._menu.addSeparator()
         self._menu.addAction(t("quit"), QApplication.instance().quit)
+
+    def _on_update_available(self, release: dict) -> None:
+        """Notify once per version, so ignoring an update doesn't nag."""
+        version = release["version"]
+        w = widget_module._active_widget
+        if w is not None and w.config.get("notified_version") == version:
+            return
+        self.showMessage(t("update_notify_title"),
+                         t("update_notify_body").format(version=version),
+                         self._app_icon, 10_000)
+        if w is not None:
+            w.remember("notified_version", version)
+
+    def _start_update(self) -> None:
+        if updater.available_update():
+            from src.settings_window import start_update
+            start_update()
 
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason == QSystemTrayIcon.ActivationReason.Trigger:

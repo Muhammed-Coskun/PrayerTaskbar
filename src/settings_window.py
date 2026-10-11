@@ -16,16 +16,17 @@ import os
 import shutil
 import threading
 
-from PyQt6.QtWidgets import (QApplication, QComboBox, QFileDialog, QHBoxLayout,
+from PyQt6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QScrollArea,
                              QVBoxLayout, QWidget)
 from PyQt6.QtCore import Qt, QObject, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QCursor, QDesktopServices, QGuiApplication
 
 from src import autostart
+from src import updater
 from src import widget as widget_module
 from src.config import APP_VERSION, load_config, save_config, get_cache_path, get_data_dir
-from src.controls import SettingsCard, ToggleSwitch, accent_button, hyperlink_button
+from src.controls import ComboBox, SettingsCard, ToggleSwitch, accent_button, hyperlink_button
 from src.data_loader import search_locations, fetch_prayer_times, save_cache, get_coordinates
 from src.i18n import t, set_language
 from src.theme import (app_theme, css, font, icon_font, set_caption_color, set_dark_title_bar,
@@ -71,6 +72,13 @@ def _forget_window(*_args) -> None:
     _window = None
 
 
+def start_update() -> None:
+    """Show the settings (with the download progress) and install the update."""
+    show_settings()
+    if updater.instance() is not None:
+        updater.instance().install()
+
+
 def _active_widget():
     """The live taskbar widget (it is replaced when it switches screens)."""
     return widget_module._active_widget
@@ -98,6 +106,12 @@ class SettingsWindow(QWidget):
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(_SEARCH_DELAY_MS)
         self._search_timer.timeout.connect(self._start_search)
+
+        self._update_button: QPushButton | None = None
+        if updater.instance() is not None:
+            updater.instance().available.connect(self._on_update_available)
+            updater.instance().progress.connect(self._on_update_progress)
+            updater.instance().failed.connect(self._on_update_failed)
 
         self.setObjectName("SettingsWindow")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
@@ -402,7 +416,7 @@ class SettingsWindow(QWidget):
         return label
 
     def _build_screen_card(self, cfg: dict) -> SettingsCard:
-        combo = QComboBox()
+        combo = ComboBox()
         combo.setFont(font(14))
         combo.setMinimumHeight(32)
         combo.setMinimumWidth(200)
@@ -464,7 +478,7 @@ class SettingsWindow(QWidget):
     # ------------------------------------------------------------------
 
     def _build_language_card(self, cfg: dict) -> SettingsCard:
-        combo = QComboBox()
+        combo = ComboBox()
         combo.setFont(font(14))
         combo.setMinimumHeight(32)
         combo.setMinimumWidth(160)
@@ -517,10 +531,37 @@ class SettingsWindow(QWidget):
     # ------------------------------------------------------------------
 
     def _build_about_card(self) -> SettingsCard:
-        link = hyperlink_button("GitHub", self.theme)
-        link.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(GITHUB_URL)))
-        return SettingsCard(self.theme, GLYPH_INFO, "PrayerTaskbar",
-                            t("about_desc").format(version=APP_VERSION), link)
+        update = updater.available_update()
+        if update is None:
+            self._update_button = None
+            link = hyperlink_button("GitHub", self.theme)
+            link.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(GITHUB_URL)))
+            return SettingsCard(self.theme, GLYPH_INFO, "PrayerTaskbar",
+                                t("about_desc").format(version=APP_VERSION), link)
+
+        # A newer version exists: offer to install it right here
+        self._update_button = accent_button(t("update_now"), self.theme)
+        self._update_button.clicked.connect(start_update)
+        if updater.instance().installing:
+            self._update_button.setEnabled(False)
+        self._about_card = SettingsCard(self.theme, GLYPH_INFO, "PrayerTaskbar",
+                                        t("update_available").format(version=update["version"]),
+                                        self._update_button)
+        return self._about_card
+
+    def _on_update_available(self, _release: dict) -> None:
+        QTimer.singleShot(0, self._rebuild)
+
+    def _on_update_progress(self, percent: int) -> None:
+        if self._update_button is not None:
+            self._update_button.setEnabled(False)
+            self._update_button.setText(t("update_downloading").format(percent=percent))
+
+    def _on_update_failed(self) -> None:
+        if self._update_button is not None:
+            self._update_button.setEnabled(True)
+            self._update_button.setText(t("update_now"))
+            self._about_card.set_description(t("update_failed"))
 
     def _build_quit_card(self) -> SettingsCard:
         quit_btn = QPushButton(t("quit"))

@@ -5,7 +5,7 @@
 ; The setup is written to dist\PrayerTaskbar-Setup.exe.
 
 #define AppName "PrayerTaskbar"
-#define AppVersion "1.0.0"
+#define AppVersion "1.1.0"
 #define AppPublisher "Muhammed Coskun"
 #define AppURL "https://github.com/Muhammed-Coskun/PrayerTaskbar"
 #define AppExe "PrayerTaskbar.exe"
@@ -64,6 +64,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+; Updates from inside the app run silently: start the new version afterwards
+Filename: "{app}\{#AppExe}"; Flags: nowait skipifnotsilent
 
 [Code]
 const

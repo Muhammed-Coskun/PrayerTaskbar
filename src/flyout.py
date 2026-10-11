@@ -17,10 +17,12 @@ from src.i18n import (t, get_prayer_name, get_holy_day_name, format_date,
                       format_duration, PRAYER_ORDER)
 from src.holy_days import get_next_holy_day
 from src.icons import PrayerIcon, prayer_color
-from src.controls import IconButton, accent_button
+from src.controls import IconButton, accent_button, hyperlink_button
+from src.updater import available_update
 from src.theme import (system_theme, transparency_enabled, css, font, icon_font,
                        round_corners, enable_acrylic,
-                       GLYPH_SETTINGS, GLYPH_MAP_PIN, GLYPH_WARNING, GLYPH_STAR)
+                       GLYPH_SETTINGS, GLYPH_MAP_PIN, GLYPH_WARNING, GLYPH_STAR,
+                       GLYPH_DOWNLOAD)
 
 FLYOUT_WIDTH = 360
 _PADDING_H = 20
@@ -134,6 +136,42 @@ class PrayerFlyout(QWidget):
             root.addLayout(self._build_prayer_list(times_today))
         else:
             root.addWidget(self._build_empty_state())
+
+        update = available_update()
+        if update:
+            root.addSpacing(12)
+            root.addWidget(self._build_update_bar(update))
+
+    def _build_update_bar(self, update: dict) -> QFrame:
+        """Small accent bar offering the new version, like a Fluent InfoBar."""
+        th = self.theme
+        bar = QFrame()
+        bar.setObjectName("UpdateBar")
+        bar.setStyleSheet(
+            f"QFrame#UpdateBar {{ background: {css(_accent_tint(th, th.accent))};"
+            f" border: none; border-radius: 6px; }}"
+        )
+        h = QHBoxLayout(bar)
+        h.setContentsMargins(12, 4, 4, 4)
+        h.setSpacing(10)
+
+        icon = QLabel(GLYPH_DOWNLOAD)
+        icon.setFont(icon_font(16))
+        icon.setStyleSheet(f"color: {css(th.accent_foreground)}; background: transparent;")
+        h.addWidget(icon)
+        h.addWidget(self._label(t('update_available').format(version=update['version']),
+                                12, th.text), 1)
+
+        button = hyperlink_button(t('update_now'), th)
+        button.setFont(font(12, semibold=True))
+        button.clicked.connect(self._start_update)
+        h.addWidget(button)
+        return bar
+
+    def _start_update(self):
+        self.close()
+        from src.settings_window import start_update
+        start_update()
 
     def _label(self, text: str, px: int, color: QColor, semibold: bool = False,
                display: bool = False) -> QLabel:

@@ -3,11 +3,12 @@ controls.py — Small Windows 11 (Fluent) controls built on Qt widgets.
 
 - IconButton:      subtle, borderless button with a Segoe Fluent Icons glyph
 - ToggleSwitch:    the Windows 11 on/off switch
+- ComboBox:        a combo box that lets the mouse wheel scroll the page
 - SettingsCard:    a row in the style of the Windows 11 Settings app
 - accent_button / hyperlink_button: styled QPushButtons
 """
 
-from PyQt6.QtWidgets import (QAbstractButton, QFrame, QHBoxLayout, QLabel,
+from PyQt6.QtWidgets import (QAbstractButton, QComboBox, QFrame, QHBoxLayout, QLabel,
                              QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 from PyQt6.QtCore import (Qt, QEasingCurve, QPropertyAnimation, QRectF, QSize,
                           pyqtProperty)
@@ -157,6 +158,17 @@ class ToggleSwitch(QAbstractButton):
         p.setBrush(knob_color)
         p.drawRoundedRect(QRectF(x, y, knob_w, knob_h), knob_h / 2, knob_h / 2)
         p.end()
+
+
+class ComboBox(QComboBox):
+    """Combo box that ignores the mouse wheel while closed.
+
+    As in the Windows 11 Settings app, scrolling over it scrolls the page
+    instead of silently changing the selection.
+    """
+
+    def wheelEvent(self, event) -> None:
+        event.ignore()
 
 
 class SettingsCard(QFrame):
