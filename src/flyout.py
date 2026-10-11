@@ -6,10 +6,9 @@ in a modern popup above the taskbar widget.
 """
 
 from datetime import datetime, date
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-                              QGraphicsDropShadowEffect, QFrame)
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame
 from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QRect
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtGui import QFont
 
 from src.i18n import (t, get_prayer_name, get_prayer_icon, get_holy_day_name,
                        get_weekday_name, get_month_name, PRAYER_ORDER)
@@ -30,13 +29,6 @@ class PrayerFlyout(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFixedWidth(340)
-
-        # Drop shadow
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(32)
-        shadow.setColor(QColor(0, 0, 0, 120))
-        shadow.setOffset(0, 4)
-        self.setGraphicsEffect(shadow)
 
         self._build_ui()
 
@@ -455,11 +447,7 @@ class PrayerFlyout(QWidget):
     def _open_settings(self):
         """Open the settings window."""
         self.close()
-        from src.settings_window import SettingsWindow
-        self.prayer_widget._settings_window = SettingsWindow(self.prayer_widget)
-        self.prayer_widget._settings_window.show()
-        self.prayer_widget._settings_window.raise_()
-        self.prayer_widget._settings_window.activateWindow()
+        self.prayer_widget.open_settings()
 
     def _quit_app(self):
         from PyQt6.QtWidgets import QApplication

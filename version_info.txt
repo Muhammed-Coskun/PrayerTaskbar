@@ -1,0 +1,29 @@
+# Windows version resource for PrayerTaskbar.exe (used by PrayerTaskbar.spec).
+# FileDescription is the name Task Manager and the "Open with" dialog show.
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable('040904B0', [
+        StringStruct('CompanyName', 'Muhammed Coskun'),
+        StringStruct('FileDescription', 'PrayerTaskbar'),
+        StringStruct('FileVersion', '1.0.0.0'),
+        StringStruct('InternalName', 'PrayerTaskbar'),
+        StringStruct('LegalCopyright', 'Copyright (c) 2026 Muhammed Coskun. MIT License.'),
+        StringStruct('OriginalFilename', 'PrayerTaskbar.exe'),
+        StringStruct('ProductName', 'PrayerTaskbar'),
+        StringStruct('ProductVersion', '1.0.0.0')
+      ])
+    ]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)

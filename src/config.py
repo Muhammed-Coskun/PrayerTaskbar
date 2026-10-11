@@ -42,6 +42,8 @@ DEFAULT_CONFIG: dict = {
     "city": "",
     "country": "",
     "location_id": None,
+    "latitude": None,
+    "longitude": None,
     "location_name": "",
     "data_source": "api",       # 'api' or 'excel'
     "excel_path": None,

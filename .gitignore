@@ -1,6 +1,8 @@
 __pycache__/
 build/
-*.spec
+dist/
+.venv/
+GebetszeitenWidget.spec
 widget_debug.log
 data/
 config.json

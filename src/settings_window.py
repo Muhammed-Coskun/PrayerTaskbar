@@ -21,9 +21,9 @@ import webbrowser
 import winreg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                               QComboBox, QLineEdit, QPushButton, QFileDialog,
-                              QGraphicsDropShadowEffect, QFrame, QCheckBox)
+                              QFrame, QCheckBox)
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtGui import QFont
 from src.config import load_config, save_config, get_data_dir, get_executable_path, is_frozen
 from src.i18n import t, set_language, get_language
 from src.data_loader import search_locations, fetch_prayer_times, save_cache, parse_api_data
@@ -136,13 +136,6 @@ class SettingsWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFixedWidth(420)
 
-        # Drop shadow around the dialog
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(32)
-        shadow.setOffset(0, 4)
-        shadow.setColor(QColor(0, 0, 0, 160))
-        self.setGraphicsEffect(shadow)
-
     def _center_on_screen(self) -> None:
         """Position the window at the centre of the primary screen."""
         screen = self.screen()
@@ -165,8 +158,10 @@ class SettingsWindow(QWidget):
 
         # Container frame with dark background
         container = QFrame(self)
+        container.setObjectName("SettingsContainer")
         container.setStyleSheet(
             "QFrame { background: #2b2b2b; border-radius: 12px; }"
+            "QFrame#SettingsContainer { border: 1px solid rgba(255, 255, 255, 0.08); }"
         )
         outer.addWidget(container)
 
@@ -357,9 +352,13 @@ class SettingsWindow(QWidget):
         """Save the selected location, fetch prayer times, and update UI."""
         location_id = location.get("id")
         location_name = self._format_location(location)
+        latitude = location.get("latitude")
+        longitude = location.get("longitude")
 
         self.config["location_id"] = location_id
         self.config["location_name"] = location_name
+        self.config["latitude"] = latitude
+        self.config["longitude"] = longitude
         self.config["data_source"] = "api"
         save_config(self.config)
 
@@ -367,8 +366,8 @@ class SettingsWindow(QWidget):
         self._clear_results()
 
         # Fetch prayer times for the new location
-        if location_id:
-            raw_data = fetch_prayer_times(location_id)
+        if location_id and latitude is not None and longitude is not None:
+            raw_data = fetch_prayer_times(latitude, longitude)
             if raw_data:
                 cache_path = get_cache_path()
                 save_cache(cache_path, location_id, raw_data)
@@ -380,7 +379,7 @@ class SettingsWindow(QWidget):
     def _format_location(location: dict) -> str:
         """Build a readable name string from a location dict."""
         parts = []
-        for key in ("region", "city", "country"):
+        for key in ("name", "country_code"):
             val = location.get(key)
             if val:
                 parts.append(str(val))

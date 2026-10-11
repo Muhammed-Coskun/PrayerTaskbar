@@ -31,7 +31,7 @@ from src.win32_helpers import (
     get_window_rect,
     user32,
 )
-from src.data_loader import load_prayer_data, refresh_if_needed
+from src.data_loader import load_prayer_data, refresh_if_needed, get_coordinates
 from src.holy_days import is_ramadan_today
 
 logger = logging.getLogger(__name__)
@@ -359,7 +359,10 @@ class PrayerWidget(QWidget):
         display_text = "Loading..."
 
         if today not in self.daily_times:
-            display_text = t("date_missing")
+            if self._location_missing():
+                display_text = t("location_missing")
+            else:
+                display_text = t("date_missing")
         else:
             times_today = self.daily_times[today]
             next_key: str | None = None
@@ -479,7 +482,8 @@ class PrayerWidget(QWidget):
     def mousePressEvent(self, event) -> None:
         """Handle mouse button presses.
 
-        - **Left / Right click**: open the flyout menu.
+        - **Left / Right click**: open the flyout menu, or the settings
+          if no location is set yet.
         - **Middle click**: begin horizontal drag to reposition.
         """
         if event.button() == Qt.MouseButton.MiddleButton:
@@ -489,7 +493,10 @@ class PrayerWidget(QWidget):
             Qt.MouseButton.LeftButton,
             Qt.MouseButton.RightButton,
         ):
-            self.show_modern_menu()
+            if not self.daily_times and self._location_missing():
+                self.open_settings()
+            else:
+                self.show_modern_menu()
 
     def mouseMoveEvent(self, event) -> None:
         """Track horizontal drag movement while middle button is held."""
@@ -507,6 +514,21 @@ class PrayerWidget(QWidget):
     # ------------------------------------------------------------------
     # Flyout menu
     # ------------------------------------------------------------------
+
+    def _location_missing(self) -> bool:
+        """True if prayer times come from the API but no usable location is set."""
+        return (
+            self.config.get("data_source", "api") == "api"
+            and get_coordinates(self.config) is None
+        )
+
+    def open_settings(self) -> None:
+        """Open the settings window (used by the flyout and the tray icon)."""
+        from src.settings_window import SettingsWindow
+        self._settings_window = SettingsWindow(self)
+        self._settings_window.show()
+        self._settings_window.raise_()
+        self._settings_window.activateWindow()
 
     def show_modern_menu(self) -> None:
         """Open (or close) the Win11-style prayer flyout panel.

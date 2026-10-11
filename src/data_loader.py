@@ -14,7 +14,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # abdus.dev Diyanet API wrapper
-API_BASE = "https://prayertimes.api.abdus.dev/api/diyanet"
+API_BASE = "https://prayertimes.api.abdus.dev/api/v1/diyanet"
 
 
 def search_locations(query: str) -> list[dict]:
@@ -24,44 +24,59 @@ def search_locations(query: str) -> list[dict]:
         query: City or region name to search for.
         
     Returns:
-        List of location dicts: [{'id': int, 'country': str, 'city': str, 'region': str}, ...]
+        List of location dicts: [{'id': int, 'name': str, 'country_code': str,
+        'latitude': float, 'longitude': float, 'timezone': str}, ...]
     """
     import urllib.request
     import urllib.parse
-    
-    url = f"{API_BASE}/search?q={urllib.parse.quote(query)}"
+
+    url = f"{API_BASE}/location?query={urllib.parse.quote(query)}"
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'PrayerWidget/1.0'})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode('utf-8'))
-            return data if isinstance(data, list) else []
+            return (data.get('locations') or []) if isinstance(data, dict) else []
     except Exception as e:
         logger.error(f"Location search failed: {e}")
         return []
 
 
-def fetch_prayer_times(location_id: int) -> list[dict]:
-    """Fetch prayer times from the Diyanet API for a location.
-    
-    The API returns approximately 30 days of data from today.
-    
+def fetch_prayer_times(latitude: float, longitude: float) -> list[dict]:
+    """Fetch prayer times from the Diyanet API for a coordinate pair.
+
+    Coordinates are used instead of location_id because the API's
+    location_id lookup fails upstream for most locations.
+
     Args:
-        location_id: Diyanet location ID (e.g. 9206 for Ankara).
-        
+        latitude: Latitude of the selected location.
+        longitude: Longitude of the selected location.
+
     Returns:
-        List of prayer time dicts with keys: date, fajr, sun, dhuhr, asr, maghrib, isha
+        List of prayer time dicts with keys: date, fajr, sunrise, dhuhr, asr, maghrib, isha
     """
     import urllib.request
-    
-    url = f"{API_BASE}/prayertimes?location_id={location_id}"
+
+    url = f"{API_BASE}/prayertimes?latitude={latitude}&longitude={longitude}"
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'PrayerWidget/1.0'})
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode('utf-8'))
-            return data if isinstance(data, list) else []
+            return (data.get('prayertimes') or []) if isinstance(data, dict) else []
     except Exception as e:
         logger.error(f"Prayer times fetch failed: {e}")
         return []
+
+
+def get_coordinates(config: dict) -> Optional[tuple[float, float]]:
+    """Return (latitude, longitude) from config, or None if not set.
+
+    Locations chosen before the API migration only have a legacy
+    Diyanet location_id and must be re-selected in the settings.
+    """
+    lat, lon = config.get('latitude'), config.get('longitude')
+    if lat is None or lon is None:
+        return None
+    return lat, lon
 
 
 def save_cache(cache_path: str, location_id: int, prayer_data: list[dict]) -> None:
@@ -125,7 +140,7 @@ def parse_api_data(prayer_data: list[dict]) -> dict:
             # Map API keys to internal canonical keys
             daily_times[d] = {
                 'fajr': entry.get('fajr', '').strip(),
-                'sunrise': entry.get('sun', '').strip(),
+                'sunrise': (entry.get('sunrise') or entry.get('sun', '')).strip(),
                 'dhuhr': entry.get('dhuhr', '').strip(),
                 'asr': entry.get('asr', '').strip(),
                 'maghrib': entry.get('maghrib', '').strip(),
@@ -279,7 +294,10 @@ def load_prayer_data(config: dict, cache_path: str) -> tuple[dict, dict, str]:
                 logger.info("Cache expired or insufficient, refreshing...")
         
         # Fetch fresh data from API
-        raw_data = fetch_prayer_times(location_id)
+        coords = get_coordinates(config)
+        if not coords:
+            logger.warning("Legacy location without coordinates, please re-select location")
+        raw_data = fetch_prayer_times(*coords) if coords else []
         if raw_data:
             save_cache(cache_path, location_id, raw_data)
             daily_times = parse_api_data(raw_data)
@@ -320,16 +338,17 @@ def refresh_if_needed(config: dict, cache_path: str, daily_times: dict) -> Optio
         return None
     
     location_id = config.get('location_id')
-    if not location_id:
+    coords = get_coordinates(config)
+    if not location_id or not coords:
         return None
-    
+
     today = date.today()
     future_dates = [d for d in daily_times if d >= today]
     
     # Refresh if less than 3 days of data remaining
     if len(future_dates) < 3:
         logger.info("Data running low, refreshing from API...")
-        raw_data = fetch_prayer_times(location_id)
+        raw_data = fetch_prayer_times(*coords)
         if raw_data:
             save_cache(cache_path, location_id, raw_data)
             return parse_api_data(raw_data)
