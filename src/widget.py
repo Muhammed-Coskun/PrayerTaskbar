@@ -335,6 +335,9 @@ class PrayerWidget(QWidget):
 
     def _move_to_taskbar(self, index: int) -> None:
         """Re-parent the widget into another (living) taskbar right away."""
+        # Hidden while it changes taskbars: a window moved while visible is
+        # never repainted afterwards (e.g. after a language change)
+        self.hide()
         self._do_inject(self.taskbars[index][1])
         if self.taskbar_hwnd is None:
             self._recreate_widget(target_monitor=index)
@@ -343,7 +346,7 @@ class PrayerWidget(QWidget):
         self.config["monitor_index"] = index
         self._save_timer.start()
         self._place()
-        self.update()
+        self.show()
 
     def adjust_position(self, delta: int) -> None:
         """Move the widget horizontally by *delta* pixels.
