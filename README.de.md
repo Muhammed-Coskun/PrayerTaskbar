@@ -24,7 +24,8 @@ PrayerTaskbar zeigt neben der Uhr, wie lange es bis zum nächsten Gebet dauert. 
 [![Für Windows herunterladen](https://img.shields.io/badge/Herunterladen-Windows-0078D4?labelColor=0067C0&color=005A9E)](https://github.com/Muhammed-Coskun/PrayerTaskbar/releases/latest/download/PrayerTaskbar-Setup.exe)
 
 *Starte das Setup, danach erscheint PrayerTaskbar in deiner Taskleiste.*<br>
-*Zeigt Windows eine SmartScreen-Warnung, klicke auf „Weitere Informationen“ und dann auf „Trotzdem ausführen“.*
+*Zeigt Windows eine SmartScreen-Warnung, klicke auf „Weitere Informationen“ und dann auf „Trotzdem ausführen“.*<br>
+*PrayerTaskbar ist Open Source. Jedes Setup wird von [GitHub Actions](https://github.com/Muhammed-Coskun/PrayerTaskbar/actions/workflows/release.yml) aus diesem Code gebaut.*
 
 ## Funktionen
 
@@ -32,11 +33,11 @@ PrayerTaskbar zeigt neben der Uhr, wie lange es bis zum nächsten Gebet dauert. 
 
 - **Countdown in der Taskleiste:** Die Zeit bis zum nächsten Gebet, direkt neben der Uhr. In den letzten 15 Minuten wird sie rot.
 - **Der Tag auf einen Blick:** Ein Klick zeigt alle heutigen Gebetszeiten, das nächste Gebet ist hervorgehoben.
-- **Nächster Feiertag:** Sieh, wie viele Tage es noch bis zum nächsten Feiertag sind, etwa Ramadan oder Bayram.
+- **Nächster Feiertag:** Sieh, wie viele Tage es noch bis zum nächsten Feiertag sind, etwa Ramadan oder Bayram. Die Daten folgen dem Kalender von Diyanet.
 - **Deine Stadt:** Such nach deiner Stadt, die Gebetszeiten kommen von Diyanet.
 - **Gemacht für Windows 11:** Passt sich dem hellen und dunklen Modus und deiner Akzentfarbe an.
 - **Drei Sprachen:** Englisch, Türkisch und Deutsch.
-- **Automatische Updates:** Neue Versionen installieren sich beim Start von selbst. Schaltest du das aus, sagt dir die App nur Bescheid.
+- **Automatische Updates:** Neue Versionen installieren sich beim Start von selbst. Schaltest du das aus, sagt dir die App nur Bescheid. Jedes Update wird vor der Installation mit seiner Prüfsumme auf GitHub verglichen.
 
 </div>
 
@@ -53,6 +54,33 @@ Wähle den Bildschirm und verschiebe das Widget in der Taskleiste.
 Ändere die Sprache und starte PrayerTaskbar mit Windows.
 
 <img src="./.github/assets/settings-general.png" alt="Allgemeine Einstellungen" width="600"/>
+
+### Datenschutz
+
+PrayerTaskbar hat kein Konto, keine Werbung und kein Tracking. Die App verbindet sich nur mit:
+
+<div align="left">
+
+- **prayertimes.api.abdus.dev**, um die Gebetszeiten für deine Stadt zu laden
+- **github.com**, um nach Updates zu suchen und sie herunterzuladen
+
+</div>
+
+Deine Einstellungen bleiben auf deinem PC in `%APPDATA%\PrayerTaskbar`.
+
+### Aus dem Quellcode bauen
+
+<div align="left">
+
+```
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python -m src.main
+```
+
+Für die App und das Setup führe `.venv\Scripts\pyinstaller --noconfirm PrayerTaskbar.spec` und danach `ISCC installer.iss` aus [Inno Setup](https://jrsoftware.org/isinfo.php) aus. Der [Release-Workflow](.github/workflows/release.yml) macht dasselbe und kompiliert zusätzlich den Bootloader von PyInstaller aus dem Quellcode.
+
+</div>
 
 ### Danke
 

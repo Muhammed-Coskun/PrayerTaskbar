@@ -26,7 +26,8 @@ PrayerTaskbar shows the time until the next prayer next to your clock. One click
 [![Download for Windows](https://img.shields.io/badge/Download-Windows-0078D4?labelColor=0067C0&color=005A9E)](https://github.com/Muhammed-Coskun/PrayerTaskbar/releases/latest/download/PrayerTaskbar-Setup.exe)
 
 *Run the setup and PrayerTaskbar appears in your taskbar.*<br>
-*If Windows shows a SmartScreen warning, click "More info" and then "Run anyway".*
+*If Windows shows a SmartScreen warning, click "More info" and then "Run anyway".*<br>
+*PrayerTaskbar is open source. Every setup is built from this code by [GitHub Actions](https://github.com/Muhammed-Coskun/PrayerTaskbar/actions/workflows/release.yml).*
 
 ## Features
 
@@ -34,11 +35,11 @@ PrayerTaskbar shows the time until the next prayer next to your clock. One click
 
 - **Countdown in the taskbar:** The time until the next prayer, right next to the clock. It turns red in the last 15 minutes.
 - **Today at a glance:** One click shows all of today's prayer times, with the next prayer highlighted.
-- **Next holy day:** See how many days are left until the next holy day, such as Ramadan or Eid.
+- **Next holy day:** See how many days are left until the next holy day, such as Ramadan or Eid. The dates follow the Diyanet calendar.
 - **Your city:** Search for your city and the prayer times are loaded from Diyanet.
 - **Made for Windows 11:** Follows light and dark mode and your accent color.
 - **Three languages:** English, Turkish and German.
-- **Automatic updates:** New versions install themselves when the app starts. If you turn this off, the app just lets you know.
+- **Automatic updates:** New versions install themselves when the app starts. If you turn this off, the app just lets you know. Each update is checked against its checksum on GitHub before it is installed.
 
 </div>
 
@@ -55,6 +56,33 @@ Pick the screen and move the widget along the taskbar.
 Change the language and start PrayerTaskbar with Windows.
 
 <img src="./.github/assets/settings-general.png" alt="General settings" width="600"/>
+
+### Privacy
+
+PrayerTaskbar has no account, no ads and no tracking. It only connects to:
+
+<div align="left">
+
+- **prayertimes.api.abdus.dev** to load the prayer times for your city
+- **github.com** to look for updates and download them
+
+</div>
+
+Your settings stay on your PC in `%APPDATA%\PrayerTaskbar`.
+
+### Build from source
+
+<div align="left">
+
+```
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python -m src.main
+```
+
+To build the app and the setup, run `.venv\Scripts\pyinstaller --noconfirm PrayerTaskbar.spec` and then `ISCC installer.iss` from [Inno Setup](https://jrsoftware.org/isinfo.php). The [release workflow](.github/workflows/release.yml) does the same and also compiles PyInstaller's bootloader from source.
+
+</div>
 
 ### Credits
 

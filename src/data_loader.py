@@ -11,10 +11,13 @@ import logging
 from datetime import datetime, date
 from typing import Optional
 
+from src.config import APP_VERSION
+
 logger = logging.getLogger(__name__)
 
 # abdus.dev Diyanet API wrapper
 API_BASE = "https://prayertimes.api.abdus.dev/api/v1/diyanet"
+_USER_AGENT = f"PrayerTaskbar/{APP_VERSION}"
 
 
 def search_locations(query: str, raise_errors: bool = False) -> list[dict]:
@@ -34,7 +37,7 @@ def search_locations(query: str, raise_errors: bool = False) -> list[dict]:
 
     url = f"{API_BASE}/location?query={urllib.parse.quote(query)}"
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'PrayerWidget/1.0'})
+        req = urllib.request.Request(url, headers={'User-Agent': _USER_AGENT})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode('utf-8'))
             return (data.get('locations') or []) if isinstance(data, dict) else []
@@ -62,7 +65,7 @@ def fetch_prayer_times(latitude: float, longitude: float) -> list[dict]:
 
     url = f"{API_BASE}/prayertimes?latitude={latitude}&longitude={longitude}"
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'PrayerWidget/1.0'})
+        req = urllib.request.Request(url, headers={'User-Agent': _USER_AGENT})
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode('utf-8'))
             return (data.get('prayertimes') or []) if isinstance(data, dict) else []

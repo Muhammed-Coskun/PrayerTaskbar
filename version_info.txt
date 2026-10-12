@@ -2,8 +2,8 @@
 # FileDescription is the name Task Manager and the "Open with" dialog show.
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 1, 2, 0),
-    prodvers=(1, 1, 2, 0),
+    filevers=(1, 1, 3, 0),
+    prodvers=(1, 1, 3, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -16,12 +16,12 @@ VSVersionInfo(
       StringTable('040904B0', [
         StringStruct('CompanyName', 'Muhammed Coskun'),
         StringStruct('FileDescription', 'PrayerTaskbar'),
-        StringStruct('FileVersion', '1.1.2.0'),
+        StringStruct('FileVersion', '1.1.3.0'),
         StringStruct('InternalName', 'PrayerTaskbar'),
         StringStruct('LegalCopyright', 'Copyright (c) 2026 Muhammed Coskun. MIT License.'),
         StringStruct('OriginalFilename', 'PrayerTaskbar.exe'),
         StringStruct('ProductName', 'PrayerTaskbar'),
-        StringStruct('ProductVersion', '1.1.2.0')
+        StringStruct('ProductVersion', '1.1.3.0')
       ])
     ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])

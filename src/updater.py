@@ -6,10 +6,12 @@ updates" is clicked, the latest GitHub release is compared with the
 running version.  A newer one is offered in the flyout, the tray menu and
 the settings.  When the check at start finds one, it is installed right
 away if automatic updates are on; otherwise the tray shows a
-notification.  Installing downloads the setup, starts it and closes the
+notification.  Installing downloads the setup, checks it against the
+SHA-256 digest GitHub lists for the release, starts it and closes the
 app; the setup replaces the app and starts the new version.
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -34,7 +36,8 @@ _FIRST_CHECK_MS = 10_000
 _RETRY_MS = 60_000      # right after logging in, the network may not be up yet
 _RETRIES = 3
 _MIN_CHECK_MS = 2_000   # keep "Checking for updates…" on screen long enough to read
-_HEADERS = {"User-Agent": "PrayerTaskbar", "Accept": "application/vnd.github+json"}
+_USER_AGENT = f"PrayerTaskbar/{APP_VERSION}"
+_HEADERS = {"User-Agent": _USER_AGENT, "Accept": "application/vnd.github+json"}
 
 _instance: "Updater | None" = None
 
@@ -49,7 +52,7 @@ def version_tuple(text: str) -> tuple[int, ...]:
 
 
 def fetch_latest_release() -> dict:
-    """Return {"version", "page", "download"} of the latest GitHub release."""
+    """Return {"version", "page", "download", "sha256"} of the latest GitHub release."""
     request = urllib.request.Request(RELEASES_API, headers=_HEADERS)
     with urllib.request.urlopen(request, timeout=10) as response:
         data = json.loads(response.read().decode("utf-8"))
@@ -58,7 +61,14 @@ def fetch_latest_release() -> dict:
         "version": data.get("tag_name", "").lstrip("vV"),
         "page": data.get("html_url"),
         "download": asset.get("browser_download_url") if asset else None,
+        "sha256": _sha256_of(asset),
     }
+
+
+def _sha256_of(asset: dict | None) -> str | None:
+    """The asset's SHA-256 from GitHub's "digest" field ("sha256:cf6b…")."""
+    algorithm, _, value = ((asset or {}).get("digest") or "").partition(":")
+    return value.lower() if algorithm == "sha256" and value else None
 
 
 class Updater(QObject):
@@ -174,24 +184,36 @@ class Updater(QObject):
         self.installing = True
         self._installing_automatically = automatically
         self.progress.emit(0)
-        threading.Thread(target=self._download, args=(url,), daemon=True).start()
+        threading.Thread(target=self._download, args=(url, self.update.get("sha256")),
+                         daemon=True).start()
 
-    def _download(self, url: str) -> None:
+    def _download(self, url: str, sha256: str | None) -> None:
         target = os.path.join(tempfile.gettempdir(), SETUP_ASSET)
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": "PrayerTaskbar"})
+            # A setup that can't be checked against the release is never run
+            if not sha256:
+                raise ValueError("The release lists no SHA-256 digest for the setup")
+            request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+            digest = hashlib.sha256()
             with urllib.request.urlopen(request, timeout=30) as response, \
                     open(target + ".part", "wb") as file:
                 total = int(response.headers.get("Content-Length") or 0)
                 done = 0
                 while chunk := response.read(256 * 1024):
                     file.write(chunk)
+                    digest.update(chunk)
                     done += len(chunk)
                     if total:
                         self._emit(self.progress, done * 100 // total)
+            if digest.hexdigest() != sha256:
+                raise ValueError(f"SHA-256 mismatch: {digest.hexdigest()} instead of {sha256}")
             os.replace(target + ".part", target)
         except Exception:
             logger.exception("Update download failed")
+            try:
+                os.remove(target + ".part")
+            except OSError:
+                pass
             self.installing = False
             self._emit(self.failed)
             return

@@ -1,0 +1,83 @@
+# Builds PrayerTaskbar-Setup.exe from source.
+#
+# PyInstaller's bootloader is compiled here instead of using the prebuilt
+# one from PyPI: the prebuilt bootloader is shared with malware, so many
+# virus scanners flag every app that ships it.
+#
+# Push a tag like v1.2.0 to build the setup and attach it to a draft
+# release. Publish the draft by hand once it is tested: installed copies
+# update themselves as soon as a release is public.
+# "Run workflow" on the Actions tab only builds (download it under Artifacts).
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PYINSTALLER_VERSION: "6.22.3"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.15"
+
+      - name: Check that the version matches everywhere
+        run: |
+          $app = (Select-String -Path src/config.py -Pattern 'APP_VERSION: str = "(.+)"').Matches.Groups[1].Value
+          $setup = (Select-String -Path installer.iss -Pattern '#define AppVersion "(.+)"').Matches.Groups[1].Value
+          $file = (Select-String -Path version_info.txt -Pattern "'FileVersion', '(.+)'").Matches.Groups[1].Value
+          "config.py: $app, installer.iss: $setup, version_info.txt: $file"
+          if ($setup -ne $app -or $file -ne "$app.0") { throw "The versions don't match" }
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$app") {
+            throw "Tag $env:GITHUB_REF_NAME doesn't match version $app"
+          }
+
+      - name: Build PyInstaller with its own bootloader
+        run: |
+          git clone --depth 1 --branch "v$env:PYINSTALLER_VERSION" https://github.com/pyinstaller/pyinstaller.git "$env:RUNNER_TEMP/pyinstaller"
+          Push-Location "$env:RUNNER_TEMP/pyinstaller/bootloader"
+          python ./waf all
+          if ($LASTEXITCODE) { throw "Building the bootloader failed" }
+          Pop-Location
+          python -m pip install "$env:RUNNER_TEMP/pyinstaller"
+          python -m pip install -r requirements.txt
+
+      - name: Build the app
+        run: |
+          pyinstaller --noconfirm PrayerTaskbar.spec
+          if ($LASTEXITCODE) { throw "PyInstaller failed" }
+
+      - name: Build the setup
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss
+          if ($LASTEXITCODE) { throw "Inno Setup failed" }
+          Get-FileHash dist/PrayerTaskbar-Setup.exe, dist/PrayerTaskbar/PrayerTaskbar.exe | Format-List Path, Hash
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: PrayerTaskbar
+          path: |
+            dist/PrayerTaskbar-Setup.exe
+            dist/PrayerTaskbar/PrayerTaskbar.exe
+
+      - name: Attach the setup to a draft release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart("v")
+          gh release create $env:GITHUB_REF_NAME dist/PrayerTaskbar-Setup.exe --draft --title "PrayerTaskbar $version" --notes "Download **PrayerTaskbar-Setup.exe** below and run it."

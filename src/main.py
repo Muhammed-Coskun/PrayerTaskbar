@@ -8,14 +8,13 @@ sets the language, and starts the Qt event loop.
 import sys
 import os
 import ctypes
-import subprocess
 import logging
 from logging.handlers import RotatingFileHandler
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 
-from src.config import (load_config, get_cache_path, is_frozen, get_executable_path,
-                        get_base_dir, migrate_legacy_files, USER_DIR, LOG_FILE)
+from src.config import (load_config, get_cache_path, get_base_dir, migrate_legacy_files,
+                        USER_DIR, LOG_FILE)
 from src.i18n import set_language
 from src.data_loader import load_prayer_data
 from src import autostart
@@ -42,37 +41,6 @@ logging.basicConfig(
         RotatingFileHandler(log_file, 'a', maxBytes=1_000_000, backupCount=1, encoding='utf-8')
     ]
 )
-
-def create_start_menu_shortcut():
-    """Create a Windows Start Menu shortcut so the app is searchable."""
-    if not is_frozen():
-        return
-    exe_path = get_executable_path()
-    start_menu = os.path.join(os.environ["APPDATA"], r"Microsoft\Windows\Start Menu\Programs")
-    shortcut_path = os.path.join(start_menu, "PrayerTaskbar.lnk")
-
-    # Creates the shortcut, or repairs it when its target no longer exists
-    # (e.g. after the app was moved); a shortcut to another existing copy
-    # of the app is left alone
-    vbs_path = os.path.join(os.environ["TEMP"], "create_prayer_shortcut.vbs")
-    vbs_script = f'''
-Set oWS = WScript.CreateObject("WScript.Shell")
-Set oFSO = CreateObject("Scripting.FileSystemObject")
-Set oLink = oWS.CreateShortcut("{shortcut_path}")
-If Not oFSO.FileExists(oLink.TargetPath) Then
-    oLink.TargetPath = "{exe_path}"
-    oLink.WorkingDirectory = "{os.path.dirname(exe_path)}"
-    oLink.IconLocation = "{exe_path}"
-    oLink.Save
-End If
-'''
-    try:
-        with open(vbs_path, "w", encoding="utf-8") as f:
-            f.write(vbs_script)
-        subprocess.run(["cscript.exe", "//Nologo", vbs_path], creationflags=subprocess.CREATE_NO_WINDOW)
-        os.remove(vbs_path)
-    except Exception as e:
-        logging.error(f"Failed to create start menu shortcut: {e}")
 
 def main():
     """Application entry point."""
@@ -114,7 +82,6 @@ def main():
     icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
     app.setWindowIcon(icon)
 
-    create_start_menu_shortcut()
     autostart.sync_path()
 
     prayer_widget = widget_module.PrayerWidget(daily_times, hijri_dates, config)

@@ -42,7 +42,7 @@ DATA_DIR: str = os.path.join(USER_DIR, "data")
 LOG_FILE: str = os.path.join(USER_DIR, "widget_debug.log")
 """Full path to the debug log."""
 
-APP_VERSION: str = "1.1.2"
+APP_VERSION: str = "1.1.3"
 """Shown in the settings; keep in sync with version_info.txt."""
 
 # ---------------------------------------------------------------------------
@@ -86,7 +86,10 @@ def load_config() -> dict:
     """
     config = DEFAULT_CONFIG.copy()
 
-    if os.path.isfile(CONFIG_FILE):
+    if not os.path.isfile(CONFIG_FILE):
+        # First start: speak the language Windows is set to
+        config["language"] = _windows_language()
+    else:
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as fh:
                 stored = json.load(fh)
@@ -96,6 +99,17 @@ def load_config() -> dict:
             pass
 
     return config
+
+
+def _windows_language() -> str:
+    """'tr' or 'de' if Windows shows Turkish or German, otherwise 'en'."""
+    try:
+        import ctypes
+        lang_id = ctypes.windll.kernel32.GetUserDefaultUILanguage()
+    except (AttributeError, OSError):
+        return "en"
+    # The low 10 bits are the primary language (LANG_TURKISH, LANG_GERMAN)
+    return {0x1F: "tr", 0x07: "de"}.get(lang_id & 0x3FF, "en")
 
 
 def save_config(config: dict) -> None:
